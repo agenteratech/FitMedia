@@ -17,7 +17,7 @@ export type WorkoutLog = {
   workout_exercises: {
     id: string;
     exercise_name: string;
-    exercise_target: string | null;
+    exercise_target: string | string[] | null;
     workout_sets: {
       id: string;
       set_number: number;

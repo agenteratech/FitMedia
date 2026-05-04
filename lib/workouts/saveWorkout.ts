@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import type { WorkoutExerciseEntry } from '../../stores/workoutStore';
+import { normalizeMuscleList, primaryMuscleLabel } from './muscles';
 
 const classifyHit = (sets: number): 'high' | 'medium' | 'low' => {
   if (sets >= 8) return 'high';
@@ -33,7 +34,7 @@ export async function saveWorkout(params: SaveWorkoutParams): Promise<{ error: s
   exercises.forEach((ex) => {
     const done = ex.sets.filter((s) => s.completed && s.weight && s.reps);
     if (!done.length) return;
-    const key = ex.primaryMuscle ?? 'unknown';
+    const key = primaryMuscleLabel(ex.primaryMuscle) ?? 'unknown';
     bodyPartCounts[key] = (bodyPartCounts[key] ?? 0) + done.length;
   });
   const bodyPartsHit = Object.fromEntries(
@@ -65,50 +66,88 @@ export async function saveWorkout(params: SaveWorkoutParams): Promise<{ error: s
     workoutId = workout.id;
 
     for (const [index, exercise] of exercises.entries()) {
+      const targetMuscles = normalizeMuscleList(exercise.primaryMuscle);
+      const primaryTarget = targetMuscles[0] ?? null;
+      const workoutExerciseInsert = {
+        workout_id: workout.id,
+        exercise_id: exercise.exerciseId,
+        exercise_name: exercise.name,
+        exercise_target: targetMuscles.length > 0 ? targetMuscles : undefined,
+        order_index: index,
+      };
+
       const { data: workoutExercise, error: exerciseError } = await supabase
         .from('workout_exercises')
-        .insert({
-          workout_id: workout.id,
-          exercise_id: exercise.exerciseId,
-          exercise_name: exercise.name,
-          exercise_target: exercise.primaryMuscle ?? undefined,
-          order_index: index,
-        })
+        .insert(workoutExerciseInsert as any)
         .select()
         .single();
 
-      if (exerciseError || !workoutExercise)
-        throw new Error(exerciseError?.message ?? 'Unable to save exercises.');
+      if (exerciseError || !workoutExercise) {
+        const shouldRetryAsText =
+          !!exerciseError &&
+          /invalid input syntax for type text|could not determine polymorphic type/i.test(
+            exerciseError.message
+          );
 
-      for (const set of exercise.sets) {
-        if (!set.completed || !set.weight || !set.reps) continue;
-
-        const { error: setError } = await supabase.from('workout_sets').insert({
-          workout_exercise_id: workoutExercise.id,
-          set_number: set.setNumber,
-          weight_kg: set.weight,
-          reps: set.reps,
-          is_pr: set.isPR ?? false,
-          is_completed: true,
-        });
-        if (setError) throw new Error(setError.message);
-
-        // PR inserts are best-effort — a missed record isn't worth losing the workout
-        if (set.isPR) {
-          await supabase.from('personal_records').insert({
-            user_id: userId,
-            exercise_id: exercise.exerciseId,
-            weight_kg: set.weight,
-            reps: set.reps,
-            workout_id: workout.id,
-          });
+        if (!shouldRetryAsText) {
+          throw new Error(exerciseError?.message ?? 'Unable to save exercises.');
         }
+
+        const { data: textWorkoutExercise, error: textExerciseError } = await supabase
+          .from('workout_exercises')
+          .insert({
+            ...workoutExerciseInsert,
+            exercise_target: primaryTarget ?? undefined,
+          } as any)
+          .select()
+          .single();
+
+        if (textExerciseError || !textWorkoutExercise) {
+          throw new Error(textExerciseError?.message ?? 'Unable to save exercises.');
+        }
+
+        await saveWorkoutSetsAndPrs(textWorkoutExercise.id, workout.id, userId, exercise);
+        continue;
       }
+
+      await saveWorkoutSetsAndPrs(workoutExercise.id, workout.id, userId, exercise);
     }
 
     return { error: null };
   } catch (err) {
     await rollback();
     return { error: err instanceof Error ? err.message : 'Something went wrong.' };
+  }
+}
+
+async function saveWorkoutSetsAndPrs(
+  workoutExerciseId: string,
+  workoutId: string,
+  userId: string,
+  exercise: WorkoutExerciseEntry
+) {
+  for (const set of exercise.sets) {
+    if (!set.completed || !set.weight || !set.reps) continue;
+
+    const { error: setError } = await supabase.from('workout_sets').insert({
+      workout_exercise_id: workoutExerciseId,
+      set_number: set.setNumber,
+      weight_kg: set.weight,
+      reps: set.reps,
+      is_pr: set.isPR ?? false,
+      is_completed: true,
+    });
+    if (setError) throw new Error(setError.message);
+
+    // PR inserts are best-effort: a missed record isn't worth losing the workout.
+    if (set.isPR) {
+      await supabase.from('personal_records').insert({
+        user_id: userId,
+        exercise_id: exercise.exerciseId,
+        weight_kg: set.weight,
+        reps: set.reps,
+        workout_id: workoutId,
+      });
+    }
   }
 }

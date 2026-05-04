@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores/authStore';
 import { getJSON, setJSON, storageKeys } from '../lib/storage';
@@ -20,44 +20,44 @@ export function useDailyScore() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchScore = async () => {
-      if (!user) {
-        setScore(null);
-        return;
-      }
+  const fetchScore = useCallback(async () => {
+    if (!user) {
+      setScore(null);
+      return;
+    }
 
-      const today = new Date().toISOString().slice(0, 10);
-      const cacheKey = storageKeys.dailyScore(user.id, today);
-      const cached = getJSON<DailyScore>(cacheKey);
+    const today = new Date().toISOString().slice(0, 10);
+    const cacheKey = storageKeys.dailyScore(user.id, today);
+    const cached = getJSON<DailyScore>(cacheKey);
+    if (cached) setScore(cached);
 
-      if (cached) {
-        setScore(cached);
-      }
+    setLoading(true);
+    setError(null);
 
-      setLoading(true);
-      setError(null);
+    const { data, error: fetchErr } = await supabase
+      .from('daily_scores')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .single();
 
-      const { data, error } = await supabase
-        .from('daily_scores')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('date', today)
-        .single();
-
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
-
-      setScore(data as DailyScore);
-      setJSON(cacheKey, data);
+    if (fetchErr) {
+      setError(fetchErr.message);
       setLoading(false);
-    };
+      return;
+    }
 
-    fetchScore();
+    setScore(data as unknown as DailyScore);
+    setJSON(cacheKey, data);
+    setLoading(false);
   }, [user]);
 
-  return { score, loading, error };
+  useEffect(() => {
+    fetchScore();
+  }, [fetchScore]);
+
+  // Call after saving a workout / diet log / sleep log to show updated scores.
+  const refresh = useCallback(() => fetchScore(), [fetchScore]);
+
+  return { score, loading, error, refresh };
 }

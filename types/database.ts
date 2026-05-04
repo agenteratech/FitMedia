@@ -297,7 +297,7 @@ export type Database = {
           workout_id: string;
           exercise_id: string | null;
           exercise_name: string;
-          exercise_target: string | null;
+          exercise_target: string | string[] | null;
           order_index: number;
           notes: string | null;
           created_at: string;
@@ -307,7 +307,7 @@ export type Database = {
           workout_id: string;
           exercise_id?: string | null;
           exercise_name: string;
-          exercise_target?: string | null;
+          exercise_target?: string | string[] | null;
           order_index: number;
           notes?: string | null;
           created_at?: string;
@@ -317,7 +317,7 @@ export type Database = {
           workout_id?: string;
           exercise_id?: string | null;
           exercise_name?: string;
-          exercise_target?: string | null;
+          exercise_target?: string | string[] | null;
           order_index?: number;
           notes?: string | null;
           created_at?: string;
@@ -477,6 +477,39 @@ export type Database = {
           body_part_scores?: Json;
           insights?: Json;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      muscle_stats: {
+        Row: {
+          id: string;
+          user_id: string;
+          muscle_group: 'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core';
+          current_stat: number;
+          all_time_max: number;
+          last_trained_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          muscle_group: 'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core';
+          current_stat?: number;
+          all_time_max?: number;
+          last_trained_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          muscle_group?: 'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core';
+          current_stat?: number;
+          all_time_max?: number;
+          last_trained_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };

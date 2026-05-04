@@ -11,7 +11,7 @@ export type WorkoutSet = {
 export type WorkoutExerciseEntry = {
   exerciseId: string;
   name: string;
-  primaryMuscle?: string | null;
+  primaryMuscle?: string | string[] | null;
   orderIndex: number;
   sets: WorkoutSet[];
 };

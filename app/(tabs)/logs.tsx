@@ -31,6 +31,7 @@ import {
   type FatSecretServing,
 } from '../../lib/fatsecret/client';
 import { saveSleepLog, type SleepQuality } from '../../lib/sleep/saveSleepLog';
+import { recalculateScores } from '../../lib/scoreEngine';
 import {
   SegmentedControl,
   WeekStrip,
@@ -813,6 +814,7 @@ function FoodDetailView({
     });
     setSaving(false);
     if (error) { setSaveError(error); return; }
+    recalculateScores().catch(console.error);
     onSaved();
   };
 
@@ -934,6 +936,7 @@ function ManualFoodView({
     });
     setSaving(false);
     if (saveError) { setError(saveError); return; }
+    recalculateScores().catch(console.error);
     onSaved();
   };
 
@@ -984,6 +987,7 @@ function LogSleepSheet({
     const { error: saveError } = await saveSleepLog({ userId, date, hours, quality });
     setSaving(false);
     if (saveError) { setError(saveError); return; }
+    recalculateScores().catch(console.error);
     onSaved();
   };
 

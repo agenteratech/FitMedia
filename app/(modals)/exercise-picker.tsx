@@ -14,6 +14,7 @@ import { X, Check } from 'lucide-react-native';
 import { useExercises } from '../../hooks/useExercises';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { useRoutineStore } from '../../stores/routineStore';
+import { formatMuscleList, primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { Input, ExerciseThumbnail } from '../../src/components/primitives';
 import { colors, spacing, typography, radius } from '../../src/theme';
 
@@ -62,7 +63,7 @@ export default function ExercisePickerScreen() {
         upsertExercise({
           exerciseId: e.id,
           name: e.name,
-          primaryMuscle: (e as any).primary_muscles ?? null,
+          primaryMuscle: primaryMuscleLabel((e as any).primary_muscles),
           orderIndex: existingCount + idx,
           sets: [
             { setNumber: 1, weight: 0, reps: 8, isPR: false, completed: false },
@@ -120,6 +121,7 @@ export default function ExercisePickerScreen() {
         ]}
         renderItem={({ item }) => {
           const isSel = selected.has(item.id);
+          const muscleLabel = formatMuscleList((item as any).primary_muscles);
           return (
             <Pressable
               style={[styles.row, isSel && styles.rowSelected]}
@@ -130,9 +132,9 @@ export default function ExercisePickerScreen() {
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}
                 </Text>
-                {(item as any).primary_muscles ? (
+                {muscleLabel ? (
                   <Text style={styles.rowMuscle} numberOfLines={1}>
-                    {(item as any).primary_muscles}
+                    {muscleLabel}
                   </Text>
                 ) : null}
               </View>

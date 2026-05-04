@@ -13,6 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { Plus, Dumbbell, Trash2 } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { useRoutines } from '../../hooks/useRoutines';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { RoutineCard, Button, Chip, Sheet } from '../../src/components/primitives';
@@ -67,7 +68,7 @@ export default function RoutinesScreen() {
         upsertExercise({
           exerciseId: rex.exercise_id,
           name: rex.exercises?.name ?? 'Exercise',
-          primaryMuscle: rex.exercises?.primary_muscles ?? null,
+          primaryMuscle: primaryMuscleLabel(rex.exercises?.primary_muscles),
           orderIndex: idx,
           sets: Array.from({ length: rex.default_sets }, (_, i) => ({
             setNumber: i + 1,

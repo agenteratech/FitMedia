@@ -14,6 +14,7 @@ import { ChevronLeft, Clock, Dumbbell, Layers } from 'lucide-react-native';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { useAuthStore } from '../../stores/authStore';
 import { saveWorkout } from '../../lib/workouts/saveWorkout';
+import { recalculateScores } from '../../lib/scoreEngine';
 import { Card, Button, Chip, useSnackBar } from '../../src/components/primitives';
 import { colors, spacing, typography, numericStyle, radius } from '../../src/theme';
 
@@ -64,6 +65,7 @@ export default function FinishWorkoutScreen() {
       return;
     }
 
+    recalculateScores().catch(console.error);
     reset();
     showSnack('Workout saved');
     router.replace('/(tabs)/logs');
