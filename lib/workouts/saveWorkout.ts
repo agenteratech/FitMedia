@@ -66,48 +66,22 @@ export async function saveWorkout(params: SaveWorkoutParams): Promise<{ error: s
     workoutId = workout.id;
 
     for (const [index, exercise] of exercises.entries()) {
-      const targetMuscles = normalizeMuscleList(exercise.primaryMuscle);
-      const primaryTarget = targetMuscles[0] ?? null;
-      const workoutExerciseInsert = {
-        workout_id: workout.id,
-        exercise_id: exercise.exerciseId,
-        exercise_name: exercise.name,
-        exercise_target: targetMuscles.length > 0 ? targetMuscles : undefined,
-        order_index: index,
-      };
+      const primaryTarget = normalizeMuscleList(exercise.primaryMuscle)[0] ?? null;
 
       const { data: workoutExercise, error: exerciseError } = await supabase
         .from('workout_exercises')
-        .insert(workoutExerciseInsert as any)
+        .insert({
+          workout_id: workout.id,
+          exercise_id: exercise.exerciseId,
+          exercise_name: exercise.name,
+          exercise_target: primaryTarget ?? undefined,
+          order_index: index,
+        })
         .select()
         .single();
 
       if (exerciseError || !workoutExercise) {
-        const shouldRetryAsText =
-          !!exerciseError &&
-          /invalid input syntax for type text|could not determine polymorphic type/i.test(
-            exerciseError.message
-          );
-
-        if (!shouldRetryAsText) {
-          throw new Error(exerciseError?.message ?? 'Unable to save exercises.');
-        }
-
-        const { data: textWorkoutExercise, error: textExerciseError } = await supabase
-          .from('workout_exercises')
-          .insert({
-            ...workoutExerciseInsert,
-            exercise_target: primaryTarget ?? undefined,
-          } as any)
-          .select()
-          .single();
-
-        if (textExerciseError || !textWorkoutExercise) {
-          throw new Error(textExerciseError?.message ?? 'Unable to save exercises.');
-        }
-
-        await saveWorkoutSetsAndPrs(textWorkoutExercise.id, workout.id, userId, exercise);
-        continue;
+        throw new Error(exerciseError?.message ?? 'Unable to save exercises.');
       }
 
       await saveWorkoutSetsAndPrs(workoutExercise.id, workout.id, userId, exercise);

@@ -13,7 +13,8 @@ export async function recalculateScores(): Promise<void> {
   });
 
   if (error) {
-    console.error('[scoreEngine] recalculateScores:', error);
-    throw error;
+    // Extract the actual error body from the Edge Function response
+    const body = await (error as any).context?.json?.().catch(() => null);
+    console.error('[scoreEngine] recalculateScores error body:', body ?? error.message);
   }
 }
