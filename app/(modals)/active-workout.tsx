@@ -63,6 +63,7 @@ function ActiveExerciseCard({
       return entry.sets.map((s, i) => ({
         kg: s.weight > 0 ? String(s.weight) : '',
         reps: s.reps > 0 ? String(s.reps) : '',
+        rir: s.rir != null ? String(s.rir) : '',
         isDone: s.completed ?? false,
         isActive:
           !s.completed &&
@@ -71,9 +72,9 @@ function ActiveExerciseCard({
       }));
     }
     return [
-      { kg: '', reps: '', isDone: false, isActive: true, isPR: false },
-      { kg: '', reps: '', isDone: false, isActive: false, isPR: false },
-      { kg: '', reps: '', isDone: false, isActive: false, isPR: false },
+      { kg: '', reps: '', rir: '', isDone: false, isActive: true, isPR: false },
+      { kg: '', reps: '', rir: '', isDone: false, isActive: false, isPR: false },
+      { kg: '', reps: '', rir: '', isDone: false, isActive: false, isPR: false },
     ];
   });
 
@@ -107,6 +108,7 @@ function ActiveExerciseCard({
         setNumber: i + 1,
         weight: parseFloat(d.kg) || 0,
         reps: parseInt(d.reps, 10) || 0,
+        rir: d.rir !== '' ? parseInt(d.rir, 10) : null,
         isPR: d.isPR,
         completed: d.isDone,
       })),
@@ -155,6 +157,7 @@ function ActiveExerciseCard({
       {
         kg: last?.kg ?? '',
         reps: last?.reps ?? '',
+        rir: '',
         isDone: false,
         isActive: current.every((s) => s.isDone),
         isPR: false,

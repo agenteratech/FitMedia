@@ -32,8 +32,12 @@ export function useBodyPartScores(score: DailyScore | null) {
   }, [score]);
 }
 
+// Thresholds for the power-law display scale (unbounded):
+//   ≥80 = strong (roughly 1-year dedicated beginner level)
+//   ≥40 = building / intermediate
+//    <40 = beginner / starting out
 export const colorForScore = (value: number) => {
-  if (value >= 60) return colors.green;
-  if (value >= 35) return colors.orange;
+  if (value >= 80) return colors.green;
+  if (value >= 40) return colors.orange;
   return colors.red;
 };

@@ -17,6 +17,7 @@ import { colors, spacing, typography, radius } from '@/theme';
 export interface SetDraft {
   kg: string;
   reps: string;
+  rir: string;
   isDone: boolean;
   isActive: boolean;
   isPR: boolean;
@@ -80,6 +81,9 @@ export function ExerciseCard({
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.colLabel}>REPS</Text>
         </View>
+        <View style={{ flex: 0.75, alignItems: 'center' }}>
+          <Text style={styles.colLabel}>RIR</Text>
+        </View>
         <View style={{ width: 36 }} />
       </View>
 
@@ -90,6 +94,7 @@ export function ExerciseCard({
           setNumber={i + 1}
           kg={set.kg}
           reps={set.reps}
+          rir={set.rir}
           previous={set.previous}
           isDone={set.isDone}
           isActive={set.isActive}
@@ -97,6 +102,7 @@ export function ExerciseCard({
           showPrevious={showPrevious}
           onChangeKg={(v) => onUpdateSet(i, { kg: v })}
           onChangeReps={(v) => onUpdateSet(i, { reps: v })}
+          onChangeRir={(v) => onUpdateSet(i, { rir: v })}
           onToggleDone={() => onUpdateSet(i, { isDone: !set.isDone })}
           onDelete={sets.length > 1 ? () => onRemoveSet(i) : undefined}
         />

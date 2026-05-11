@@ -4,6 +4,7 @@ export type WorkoutSet = {
   setNumber: number;
   weight: number;
   reps: number;
+  rir?: number | null;
   isPR?: boolean;
   completed?: boolean;
 };

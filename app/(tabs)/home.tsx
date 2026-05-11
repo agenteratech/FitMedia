@@ -14,8 +14,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg';
 import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
 import { useRouter } from 'expo-router';
-import { AlertCircle, CheckCircle, ChevronRight, Dumbbell, Info, Moon, Plus, Trophy, Zap } from 'lucide-react-native';
+import { AlertCircle, CheckCircle, ChevronRight, Dumbbell, Flame, Info, Moon, Plus, Trophy, Zap } from 'lucide-react-native';
 import { useDailyScore } from '../../hooks/useDailyScore';
+import { useStreak } from '../../hooks/useStreak';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
 import { useDietLogs } from '../../hooks/useDietLogs';
@@ -33,6 +34,9 @@ const RING_STROKE = 10;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
 const RING_CIRC = 2 * Math.PI * RING_R;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+// Visual reference max for ring fill — ring looks "full" at this display value.
+// Chosen as the elite advanced target (~5+ years dedicated).
+const RING_DISPLAY_MAX = 300;
 
 // ─── Muscle group → body-highlighter slug mapping ────────────────────────────
 const GROUP_SLUGS: Record<string, Slug[]> = {
@@ -81,6 +85,7 @@ function fmtVolume(kg: number): string {
   return kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)}kg`;
 }
 
+// For 0–100 daily performance scores (workout / diet / sleep)
 function scoreColor(v: number | null): string {
   if (v === null) return colors.ink4;
   if (v >= 60) return colors.success;
@@ -95,9 +100,17 @@ function scoreBg(v: number | null): string {
   return '#F6DDD9';
 }
 
-// Orange heatmap colour: opacity scales with score (12 %–95 %)
+// For body-part scores on the unbounded power-law scale
+function bodyScoreColor(v: number): string {
+  if (v >= 80) return colors.success;
+  if (v >= 40) return colors.accent;
+  return colors.alert;
+}
+
+// Orange heatmap — opacity scales against RING_DISPLAY_MAX so the body
+// map saturates at "elite" level, not at a hard cap of 100.
 function heatColor(score: number): string {
-  const opacity = (0.12 + (Math.min(score, 100) / 100) * 0.83).toFixed(2);
+  const opacity = (0.12 + (Math.min(score, RING_DISPLAY_MAX) / RING_DISPLAY_MAX) * 0.83).toFixed(2);
   return `rgba(217, 102, 63, ${opacity})`;
 }
 
@@ -115,6 +128,7 @@ export default function HomeScreen() {
 
   // Data hooks
   const { score, loading: scoreLoading } = useDailyScore();
+  const streak = useStreak();
   const { items: workouts }   = useWorkoutHistory();
   const { items: sleepItems } = useSleepLogs();
   const { items: dietLogs }   = useDietLogs();
@@ -123,12 +137,16 @@ export default function HomeScreen() {
   // Body heatmap side toggle
   const [heatSide, setHeatSide] = useState<'front' | 'back'>('front');
 
-  // User display name
+  // User display name + gender for silhouette
   const [displayName, setDisplayName] = useState('');
+  const [userGender, setUserGender] = useState<'male' | 'female'>('male');
   useEffect(() => {
     if (!user) return;
-    supabase.from('users').select('name').eq('id', user.id).single()
-      .then(({ data }) => { if (data?.name) setDisplayName(data.name); });
+    supabase.from('users').select('name, gender').eq('id', user.id).single()
+      .then(({ data }) => {
+        if (data?.name) setDisplayName(data.name);
+        setUserGender(data?.gender === 'female' ? 'female' : 'male');
+      });
   }, [user]);
   const nameLabel = displayName || user?.email?.split('@')[0] || '';
 
@@ -137,7 +155,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!scoreLoading && score) {
       Animated.timing(animOffset, {
-        toValue: RING_CIRC * (1 - Math.min(score.total_score, 100) / 100),
+        toValue: RING_CIRC * (1 - Math.min(score.total_score, RING_DISPLAY_MAX) / RING_DISPLAY_MAX),
         duration: 1100,
         delay: 250,
         useNativeDriver: false,
@@ -236,7 +254,7 @@ export default function HomeScreen() {
                 />
                 <AnimatedCircle
                   cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                  stroke={scoreColor(totalScore || null)} strokeWidth={RING_STROKE} fill="none"
+                  stroke={bodyScoreColor(totalScore)} strokeWidth={RING_STROKE} fill="none"
                   strokeDasharray={RING_CIRC}
                   strokeDashoffset={animOffset}
                   strokeLinecap="round"
@@ -247,18 +265,18 @@ export default function HomeScreen() {
                 <Text style={[styles.scoreNum, numericStyle]}>
                   {scoreLoading ? '—' : totalScore}
                 </Text>
-                <Text style={styles.scoreSub}>/ 100</Text>
+                <Text style={styles.scoreSub}>pts</Text>
               </View>
             </View>
 
             {/* Score meta */}
             <View style={styles.heroMeta}>
               <Text style={styles.heroLabel}>BODY SCORE</Text>
-              <Text style={[styles.heroTitle, { color: scoreColor(totalScore || null) }]}>
-                {totalScore >= 80 ? 'Elite'
-                  : totalScore >= 60 ? 'Strong'
-                  : totalScore >= 40 ? 'Building'
-                  : totalScore >= 20 ? 'Starting'
+              <Text style={[styles.heroTitle, { color: bodyScoreColor(totalScore) }]}>
+                {totalScore >= 180 ? 'Elite'
+                  : totalScore >= 120 ? 'Strong'
+                  : totalScore >= 70  ? 'Building'
+                  : totalScore >= 30  ? 'Starting'
                   : 'Beginner'}
               </Text>
               <Text style={styles.heroCaption}>
@@ -286,6 +304,9 @@ export default function HomeScreen() {
             value={score?.sleep_score ?? null}
           />
         </View>
+
+        {/* ── Streak ────────────────────────────────────── */}
+        {!streak.loading && <StreakCard streak={streak} />}
 
         {/* ── Muscle heatmap ─────────────────────────────── */}
         <SectionRow label="Muscle Overview" />
@@ -315,7 +336,7 @@ export default function HomeScreen() {
             <Body
               data={bodyData}
               side={heatSide}
-              gender="male"
+              gender={userGender}
               scale={bodyScale}
               defaultFill={colors.surfaceSunk}
               border="none"
@@ -543,11 +564,14 @@ function SubScoreCard({ icon, label, value }: { icon: React.ReactNode; label: st
   );
 }
 
+// Bar reference: 250 display pts = "full bar" (strong intermediate level)
+const MUSCLE_BAR_MAX = 250;
+
 function MuscleGroupRow({
   abbr, label, score, last,
 }: { abbr: string; label: string; score: number; last: boolean }) {
-  const clr = scoreColor(score);
-  const pct = Math.min(Math.max(score, 0), 100);
+  const clr = bodyScoreColor(score);
+  const pct = Math.min((Math.max(score, 0) / MUSCLE_BAR_MAX) * 100, 100);
   return (
     <View style={[mgStyles.row, !last && mgStyles.rowBorder]}>
       <View style={mgStyles.icon}>
@@ -604,6 +628,36 @@ function ActivityStat({ value, label }: { value: string; label: string }) {
       <Text style={[styles.activityStatVal, numericStyle]}>{value}</Text>
       <Text style={styles.activityStatLbl}>{label}</Text>
     </View>
+  );
+}
+
+function StreakCard({ streak }: { streak: ReturnType<typeof useStreak> }) {
+  const isActive = streak.current > 0;
+  const iconBg   = isActive ? colors.accentSoft : colors.surfaceSunk;
+  const iconClr  = isActive ? colors.accent : colors.ink3;
+
+  return (
+    <Card padding="compact">
+      <View style={skStyles.row}>
+        <View style={[skStyles.iconWrap, { backgroundColor: iconBg }]}>
+          <Flame size={18} color={iconClr} strokeWidth={1.75} />
+        </View>
+        <View style={skStyles.info}>
+          <Text style={[skStyles.count, numericStyle, { color: isActive ? colors.ink1 : colors.ink3 }]}>
+            {streak.current}
+          </Text>
+          <Text style={[skStyles.label, { color: isActive ? colors.ink2 : colors.ink3 }]}>
+            {isActive ? 'session streak' : 'No active streak'}
+          </Text>
+        </View>
+        {streak.longest > 0 && (
+          <View style={skStyles.best}>
+            <Text style={skStyles.bestLabel}>Best</Text>
+            <Text style={[skStyles.bestVal, numericStyle]}>{streak.longest}</Text>
+          </View>
+        )}
+      </View>
+    </Card>
   );
 }
 
@@ -778,4 +832,15 @@ const insightStyles = StyleSheet.create({
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.surfaceSunk } satisfies ViewStyle,
   iconWrap: { width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', flexShrink: 0 } satisfies ViewStyle,
   msg: { ...(typography.caption as TextStyle), color: colors.ink1, flex: 1, lineHeight: 18 } satisfies TextStyle,
+});
+
+const skStyles = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'center', gap: spacing.md } satisfies ViewStyle,
+  iconWrap: { width: 36, height: 36, borderRadius: radius.input, alignItems: 'center', justifyContent: 'center', flexShrink: 0 } satisfies ViewStyle,
+  info:     { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs } satisfies ViewStyle,
+  count:    { ...(typography.subheading as TextStyle), fontSize: 20 } satisfies TextStyle,
+  label:    { ...(typography.caption as TextStyle) } satisfies TextStyle,
+  best:     { alignItems: 'flex-end' } satisfies ViewStyle,
+  bestLabel: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  bestVal:  { ...(typography.bodyMedium as TextStyle), color: colors.ink2 } satisfies TextStyle,
 });

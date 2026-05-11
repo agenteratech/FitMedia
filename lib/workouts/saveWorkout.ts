@@ -108,6 +108,7 @@ async function saveWorkoutSetsAndPrs(
       set_number: set.setNumber,
       weight_kg: set.weight,
       reps: set.reps,
+      rir: set.rir ?? null,
       is_pr: set.isPR ?? false,
       is_completed: true,
     });

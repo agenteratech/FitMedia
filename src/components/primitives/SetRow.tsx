@@ -16,6 +16,7 @@ export interface SetRowProps {
   setNumber: number;
   kg: string;
   reps: string;
+  rir: string;
   previous?: { kg: number; reps: number };
   isDone: boolean;
   isActive: boolean;
@@ -23,6 +24,7 @@ export interface SetRowProps {
   showPrevious?: boolean;
   onChangeKg: (v: string) => void;
   onChangeReps: (v: string) => void;
+  onChangeRir: (v: string) => void;
   onToggleDone: () => void;
   onDelete?: () => void;
 }
@@ -35,6 +37,7 @@ export function SetRow({
   setNumber,
   kg,
   reps,
+  rir,
   previous,
   isDone,
   isActive,
@@ -42,6 +45,7 @@ export function SetRow({
   showPrevious = false,
   onChangeKg,
   onChangeReps,
+  onChangeRir,
   onToggleDone,
   onDelete,
 }: SetRowProps) {
@@ -148,6 +152,23 @@ export function SetRow({
           />
         </View>
 
+        {/* RIR input — optional, 0-6 range */}
+        <View style={styles.colRir}>
+          <TextInput
+            style={[styles.inputField, styles.inputRir, numericStyle]}
+            value={rir}
+            onChangeText={(v) => {
+              const n = v.replace(/[^0-9]/g, '');
+              onChangeRir(n.length > 0 ? String(Math.min(9, parseInt(n, 10))) : '');
+            }}
+            keyboardType="number-pad"
+            selectTextOnFocus
+            placeholder="—"
+            placeholderTextColor={colors.ink4}
+            maxLength={1}
+          />
+        </View>
+
         {/* Done toggle */}
         <Pressable
           style={[styles.doneBtn, isDone && styles.doneBtnActive]}
@@ -189,6 +210,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   } satisfies ViewStyle,
+  colRir: {
+    flex: 0.75,
+    alignItems: 'center',
+  } satisfies ViewStyle,
   setNum: {
     ...(typography.bodyMedium as TextStyle),
     color: colors.ink3,
@@ -210,6 +235,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surfaceElevBorder,
     paddingHorizontal: spacing.sm,
+  } satisfies TextStyle,
+  inputRir: {
+    minWidth: 36,
+    paddingHorizontal: spacing.xs,
+    borderColor: colors.accentSoft,
   } satisfies TextStyle,
   doneBtn: {
     width: 28,

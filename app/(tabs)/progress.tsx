@@ -34,11 +34,23 @@ const RANGES: ScoreRange[] = ['Week', 'Month', '3 Months', 'Year'];
 const CHART_H_OFFSET = (spacing['2xl'] + spacing['2xl']) * 2;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// For 0–100 daily performance scores (workout / diet / sleep)
 function fillColor(value: number): string {
   if (value >= 60) return colors.success;
   if (value >= 35) return colors.accent;
   return colors.alert;
 }
+
+// For body-part scores on the unbounded power-law scale
+function bodyFillColor(value: number): string {
+  if (value >= 80) return colors.success;
+  if (value >= 40) return colors.accent;
+  return colors.alert;
+}
+
+// Bar reference for body-part bars: 250 pts = full bar
+const BODY_BAR_MAX = 250;
 
 function formatVolume(kg: number): string {
   if (kg >= 1000) return `${(kg / 1000).toFixed(1)}t`;
@@ -257,8 +269,8 @@ function ScoreAreaChart({ points, width }: { points: ScorePoint[]; width: number
   }
 
   const scores = points.map((p) => p.total_score);
-  const lo = Math.max(0, Math.min(...scores) - 10);
-  const hi = Math.min(100, Math.max(...scores) + 10);
+  const lo = Math.max(0, Math.min(...scores) - 15);
+  const hi = Math.max(...scores) + 15;
   const span = hi - lo || 1;
 
   const toX = (i: number) => (i / (points.length - 1)) * width;
@@ -346,8 +358,8 @@ function ScoreRow({ label, value }: { label: string; value: number | null }) {
 }
 
 function BodyPartBar({ label, value }: { label: string; value: number | null }) {
-  const pct = value !== null ? Math.min(Math.max(value, 0), 100) : 0;
-  const barColor = value !== null ? fillColor(value) : colors.surfaceSunk;
+  const pct = value !== null ? Math.min((Math.max(value, 0) / BODY_BAR_MAX) * 100, 100) : 0;
+  const barColor = value !== null ? bodyFillColor(value) : colors.surfaceSunk;
   return (
     <View style={barStyles.row}>
       <Text style={barStyles.label}>{label}</Text>
@@ -545,7 +557,7 @@ const barStyles = StyleSheet.create({
   } satisfies ViewStyle,
   val: {
     ...(typography.bodyMedium as TextStyle),
-    width: 32,
+    width: 44,
     textAlign: 'right',
     color: colors.ink2,
     fontSize: 14,
