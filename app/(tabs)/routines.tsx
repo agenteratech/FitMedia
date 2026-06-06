@@ -9,6 +9,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Dumbbell, Plus, Trash2 } from 'lucide-react-native';
@@ -247,12 +248,11 @@ export default function RoutinesScreen() {
         visible={selectedTemplate !== null}
         onClose={() => setSelectedTemplate(null)}
         snapPoints={['88%']}
+        scrollable
+        scrollContentStyle={[styles.tSheetScroll, { paddingBottom: insets.bottom + spacing['3xl'] }]}
       >
         {selectedTemplate && (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.tSheetScroll, { paddingBottom: insets.bottom + spacing['3xl'] }]}
-          >
+          <>
             {/* Influencer header */}
             <View style={styles.tSheetHeader}>
               <View style={[styles.tSheetAvatar, { backgroundColor: accentBg(selectedTemplate.accentKey) }]}>
@@ -284,7 +284,7 @@ export default function RoutinesScreen() {
 
             {/* Day picker */}
             <Text style={styles.tSheetSectionLabel}>SELECT WORKOUT DAY</Text>
-            <ScrollView
+            <GHScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.tDayRow}
@@ -312,7 +312,7 @@ export default function RoutinesScreen() {
                   </Text>
                 </Pressable>
               ))}
-            </ScrollView>
+            </GHScrollView>
 
             {/* Exercise list for selected day */}
             <Text style={styles.tSheetSectionLabel}>
@@ -342,7 +342,7 @@ export default function RoutinesScreen() {
               disabled={adding}
               style={{ marginTop: spacing.lg }}
             />
-          </ScrollView>
+          </>
         )}
       </Sheet>
 

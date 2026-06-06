@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -33,6 +33,14 @@ export interface InputProps extends Omit<TextInputProps, 'style' | 'placeholderT
 export function Input({ label, value = '', onChangeText, error, style, ...rest }: InputProps) {
   const [focused, setFocused] = useState(false);
   const anim = useSharedValue((value?.length ?? 0) > 0 ? 1 : 0);
+
+  // When form data loads asynchronously, the initial value was '' so anim
+  // started at 0. Snap the label up immediately when a value arrives.
+  useEffect(() => {
+    if ((value?.length ?? 0) > 0 && anim.value === 0) {
+      anim.value = 1;
+    }
+  }, [value]);
 
   const handleFocus = useCallback(() => {
     setFocused(true);

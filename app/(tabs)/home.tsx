@@ -27,6 +27,7 @@ import { supabase } from '../../lib/supabase';
 import { primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { Button, Card } from '../../src/components/primitives';
 import { colors, spacing, typography, numericStyle, radius } from '../../src/theme';
+import { requestLogsSegment } from '../../lib/logsSegmentRequest';
 
 // ─── Ring constants ────────────────────────────────────────────────────────────
 const RING_SIZE = 120;
@@ -376,8 +377,8 @@ export default function HomeScreen() {
         <SectionRow label="Quick Actions" />
         <View style={styles.actionsRow}>
           <ActionBtn icon={Dumbbell} label="Start Workout" onPress={() => router.push('/(tabs)/routines')} />
-          <ActionBtn icon={Plus}    label="Log Food"       onPress={() => router.push('/(tabs)/logs')} />
-          <ActionBtn icon={Moon}    label="Log Sleep"      onPress={() => router.push('/(tabs)/logs')} />
+          <ActionBtn icon={Plus}    label="Log Food"       onPress={() => { requestLogsSegment('diet');  router.push('/(tabs)/logs'); }} />
+          <ActionBtn icon={Moon}    label="Log Sleep"      onPress={() => { requestLogsSegment('sleep'); router.push('/(tabs)/logs'); }} />
         </View>
 
         {/* ── Up Next ────────────────────────────────────── */}

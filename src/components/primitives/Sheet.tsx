@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, type ViewStyle } from 'react-native';
+import { StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
+  BottomSheetScrollView,
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
@@ -14,6 +15,13 @@ export interface SheetProps {
   /** Explicit snap points e.g. ['50%', '90%']. Omit to auto-size to content height. */
   snapPoints?: (string | number)[];
   children: React.ReactNode;
+  /**
+   * When true, the sheet body is a BottomSheetScrollView so vertical scroll
+   * and any nested horizontal ScrollViews work correctly on native.
+   * Pass scrollContentStyle to style the inner content container.
+   */
+  scrollable?: boolean;
+  scrollContentStyle?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -24,7 +32,7 @@ export interface SheetProps {
  * - Keyboard-interactive: sheet moves up with keyboard
  * Requires BottomSheetModalProvider at the app root.
  */
-export function Sheet({ visible, onClose, snapPoints, children }: SheetProps) {
+export function Sheet({ visible, onClose, snapPoints, children, scrollable, scrollContentStyle }: SheetProps) {
   const ref = useRef<BottomSheetModal>(null);
   const useDynamic = snapPoints == null;
 
@@ -64,9 +72,19 @@ export function Sheet({ visible, onClose, snapPoints, children }: SheetProps) {
       keyboardBlurBehavior="restore"
       animateOnMount
     >
-      <BottomSheetView style={useDynamic ? undefined : styles.fill}>
-        {children}
-      </BottomSheetView>
+      {scrollable ? (
+        <BottomSheetScrollView
+          style={styles.fill}
+          contentContainerStyle={scrollContentStyle}
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </BottomSheetScrollView>
+      ) : (
+        <BottomSheetView style={useDynamic ? undefined : styles.fill}>
+          {children}
+        </BottomSheetView>
+      )}
     </BottomSheetModal>
   );
 }

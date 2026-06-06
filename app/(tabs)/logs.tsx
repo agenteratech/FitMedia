@@ -14,13 +14,15 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import Slider from '@react-native-community/slider';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap } from 'lucide-react-native';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useDietLogs } from '../../hooks/useDietLogs';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
 import { useAuthStore } from '../../stores/authStore';
+import { supabase } from '../../lib/supabase';
 import { storage } from '../../lib/storage';
+import { takePendingLogsSegment } from '../../lib/logsSegmentRequest';
 import { saveDietLog } from '../../lib/diet/saveDietLog';
 import {
   searchFoods,
@@ -72,7 +74,25 @@ const CAL_SIZE = 160;
 const CAL_STROKE = 14;
 const CAL_R = (CAL_SIZE - CAL_STROKE) / 2;
 const CAL_CIRC = 2 * Math.PI * CAL_R;
-const CAL_TARGET = 2400;
+
+// Mifflin-St Jeor TDEE estimate used as default when no manual target is set.
+function estimateTDEE(p: {
+  weight_kg?: number | null;
+  height_cm?: number | null;
+  age?: number | null;
+  gender?: string | null;
+  fitness_level?: string | null;
+  goal?: string | null;
+}): number {
+  if (!p.weight_kg || !p.height_cm || !p.age) return 2400;
+  const bmr = p.gender === 'female'
+    ? 10 * p.weight_kg + 6.25 * p.height_cm - 5 * p.age - 161
+    : 10 * p.weight_kg + 6.25 * p.height_cm - 5 * p.age + 5;
+  const activity = p.fitness_level === 'advanced' ? 1.725
+    : p.fitness_level === 'intermediate' ? 1.55 : 1.375;
+  const adjustment = p.goal === 'bulk' ? 300 : p.goal === 'cut' ? -300 : 0;
+  return Math.max(1200, Math.round(bmr * activity) + adjustment);
+}
 
 // ── Date helpers ───────────────────────────────────────────────────────────
 function toIso(d: Date) {
@@ -98,9 +118,11 @@ function formatMedDate(ymd: string): string {
 export default function LogsScreen() {
   const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
-
-  // Persist last-active segment in MMKV under key logs_last_segment
+  // Persist last-active segment in MMKV under key logs_last_segment.
+  // On fresh mount, a quick-action request (module-level variable) takes priority.
   const [segment, setSegmentRaw] = useState<Segment>(() => {
+    const pending = takePendingLogsSegment();
+    if (pending) return pending;
     const saved = storage.getString(SEGMENT_KEY);
     if (saved === 'workout' || saved === 'diet' || saved === 'sleep') return saved;
     return 'workout';
@@ -109,6 +131,30 @@ export default function LogsScreen() {
     setSegmentRaw(s);
     storage.set(SEGMENT_KEY, s);
   }, []);
+
+  // Calorie target — manual override takes priority; falls back to TDEE estimate.
+  const [calTarget, setCalTarget] = useState(2400);
+
+  // Runs every time this tab gains focus:
+  // • consumes any pending quick-action segment request
+  // • re-fetches calorie target so changes saved in Profile are reflected immediately
+  useFocusEffect(
+    useCallback(() => {
+      const pending = takePendingLogsSegment();
+      if (pending) setSegment(pending);
+
+      if (!user) return;
+      supabase
+        .from('users')
+        .select('calorie_target, weight_kg, height_cm, age, gender, fitness_level, goal')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }: { data: Record<string, any> | null }) => {
+          if (!data) return;
+          setCalTarget(data.calorie_target ?? estimateTDEE(data));
+        });
+    }, [user]),
+  );
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -234,6 +280,7 @@ export default function LogsScreen() {
             byMeal={dietByMeal}
             loading={dietLoading}
             onAddFood={(mealType) => setAddFoodMealType(mealType)}
+            calorieTarget={calTarget}
           />
         )}
         {segment === 'sleep' && (
@@ -365,6 +412,7 @@ function DietSegment({
   byMeal,
   loading,
   onAddFood,
+  calorieTarget,
 }: {
   selectedDate: Date;
   selectedYMD: string;
@@ -374,9 +422,10 @@ function DietSegment({
   byMeal: DietByMeal;
   loading: boolean;
   onAddFood: (mealType: string) => void;
+  calorieTarget: number;
 }) {
-  const ringOffset = CAL_CIRC * (1 - Math.min(totals.calories / CAL_TARGET, 1));
-  const calPct = Math.round((totals.calories / CAL_TARGET) * 100);
+  const ringOffset = CAL_CIRC * (1 - Math.min(totals.calories / calorieTarget, 1));
+  const calPct = Math.round((totals.calories / calorieTarget) * 100);
 
   return (
     <View style={styles.segmentBody}>
@@ -410,7 +459,7 @@ function DietSegment({
             </Svg>
             <View style={styles.ringCenter}>
               <Text style={[styles.calNum, numericStyle]}>{Math.round(totals.calories)}</Text>
-              <Text style={styles.calTarget}>/ {CAL_TARGET} kcal</Text>
+              <Text style={styles.calTarget}>/ {calorieTarget} kcal</Text>
             </View>
           </View>
           <View style={styles.macroList}>

@@ -54,15 +54,16 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
 
   const [form, setForm] = useState({
-    name:   '',
-    height: '',
-    weight: '',
-    age:    '',
-    gender: 'other',
-    level:  'beginner',
-    goal:   'maintain',
-    sleep:  '',
-    diet:   'somewhat',
+    name:     '',
+    height:   '',
+    weight:   '',
+    age:      '',
+    gender:   'other',
+    level:    'beginner',
+    goal:     'maintain',
+    sleep:    '',
+    diet:     'somewhat',
+    calories: '',
   });
 
   useEffect(() => {
@@ -87,16 +88,18 @@ export default function ProfileScreen() {
       if (error) { setError(error.message); setLoading(false); return; }
 
       setProfile(data);
+      const row = data as typeof data & { calorie_target?: number | null };
       setForm({
-        name:   data.name ?? '',
-        height: data.height_cm        ? String(data.height_cm)        : '',
-        weight: data.weight_kg        ? String(data.weight_kg)        : '',
-        age:    data.age              ? String(data.age)              : '',
-        gender: data.gender           ?? 'other',
-        level:  data.fitness_level    ?? 'beginner',
-        goal:   data.goal             ?? 'maintain',
-        sleep:  data.avg_sleep_hours  ? String(data.avg_sleep_hours)  : '',
-        diet:   data.diet_consistency ?? 'somewhat',
+        name:     data.name ?? '',
+        height:   data.height_cm        ? String(data.height_cm)        : '',
+        weight:   data.weight_kg        ? String(data.weight_kg)        : '',
+        age:      data.age              ? String(data.age)              : '',
+        gender:   data.gender           ?? 'other',
+        level:    data.fitness_level    ?? 'beginner',
+        goal:     data.goal             ?? 'maintain',
+        sleep:    data.avg_sleep_hours  ? String(data.avg_sleep_hours)  : '',
+        diet:     data.diet_consistency ?? 'somewhat',
+        calories: row.calorie_target    ? String(row.calorie_target)    : '',
       });
       setLoading(false);
     };
@@ -119,6 +122,9 @@ export default function ProfileScreen() {
       return 'Age must be a whole number between 1 and 120.';
     if (sleep !== null && (isNaN(sleep) || sleep < 0 || sleep > 24))
       return 'Sleep hours must be between 0 and 24.';
+    const calories = form.calories ? Number(form.calories) : null;
+    if (calories !== null && (isNaN(calories) || !Number.isInteger(calories) || calories < 500 || calories > 10000))
+      return 'Calorie target must be a whole number between 500 and 10,000.';
     return null;
   };
 
@@ -143,9 +149,10 @@ export default function ProfileScreen() {
         gender:           form.gender           as UserRow['gender'],
         fitness_level:    form.level            as UserRow['fitness_level'],
         goal:             form.goal             as UserRow['goal'],
-        avg_sleep_hours:  form.sleep  ? Number(form.sleep)           : null,
-        diet_consistency: form.diet             as UserRow['diet_consistency'],
-      })
+        avg_sleep_hours:  form.sleep    ? Number(form.sleep)              : null,
+        diet_consistency: form.diet               as UserRow['diet_consistency'],
+        ...(form.calories ? { calorie_target: Math.round(Number(form.calories)) } : {}),
+      } as any)
       .eq('id', user.id);
 
     setSaving(false);
@@ -216,6 +223,12 @@ export default function ProfileScreen() {
               label="Age"
               value={form.age}
               onChangeText={(age) => setForm((p) => ({ ...p, age }))}
+              keyboardType="number-pad"
+            />
+            <Input
+              label="Daily Calorie Target (kcal)"
+              value={form.calories}
+              onChangeText={(calories) => setForm((p) => ({ ...p, calories }))}
               keyboardType="number-pad"
             />
           </View>
