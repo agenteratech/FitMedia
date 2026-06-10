@@ -40,6 +40,15 @@ export const storageKeys = {
   exercises: 'exercise_cache_v1',
   workoutCategories: 'workout_categories_cache_v1',
   dailyScore: (userId: string, date: string) => `daily_score_${userId}_${date}`,
+  // AI Companion
+  companionTutorialSeen: 'companion_tutorial_seen',
+  companionEnabled: 'companion_enabled',
+  companionPersonality: 'companion_personality',
+  notificationsGranted: 'notifications_granted',
+  notifWorkout: 'notif_workout',
+  notifDiet: 'notif_diet',
+  notifSleep: 'notif_sleep',
+  notifStreak: 'notif_streak',
 };
 
 export const getJSON = <T>(key: string): T | null => {

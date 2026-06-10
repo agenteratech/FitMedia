@@ -11,7 +11,7 @@ import {
   type TextStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
 import { Input, Button, Card } from '../../src/components/primitives';
 import { colors, spacing, typography } from '../../src/theme';
@@ -19,12 +19,35 @@ import { colors, spacing, typography } from '../../src/theme';
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { signUp, loading, error, clearError } = useAuthStore();
+  const { signUp, loading, error, clearError, confirmationPending } = useAuthStore();
+  const router = useRouter();
 
   const handleSubmit = async () => {
     clearError();
     await signUp(email.trim(), password);
   };
+
+  if (confirmationPending) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.confirmContainer}>
+          <Text style={styles.brandName}>Fitmedia</Text>
+          <Card padding="comfortable" style={styles.card}>
+            <Text style={styles.title}>Check your email</Text>
+            <Text style={styles.subtitle}>
+              We sent a confirmation link to {email.trim()}. Tap it to activate your account, then sign in.
+            </Text>
+            <Button
+              label="Back to Sign In"
+              variant="secondary"
+              fullWidth
+              onPress={() => router.replace('/auth/login')}
+            />
+          </Card>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -88,6 +111,13 @@ export default function SignupScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg } satisfies ViewStyle,
+  confirmContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing['2xl'],
+    gap: spacing['2xl'],
+    alignItems: 'center',
+  } satisfies ViewStyle,
   kav: { flex: 1 } satisfies ViewStyle,
   content: {
     flexGrow: 1,

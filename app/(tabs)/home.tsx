@@ -25,7 +25,10 @@ import { useAuthStore } from '../../stores/authStore';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { supabase } from '../../lib/supabase';
 import { primaryMuscleLabel } from '../../lib/workouts/muscles';
-import { Button, Card } from '../../src/components/primitives';
+import { Button, Card, Sheet } from '../../src/components/primitives';
+import { CompanionTutorial } from '../../src/components/companion/CompanionTutorial';
+import { CompanionAvatarButton, CompanionSheet } from '../../src/components/companion/CompanionSheet';
+import { useCompanion } from '../../hooks/useCompanion';
 import { colors, spacing, typography, numericStyle, radius } from '../../src/theme';
 import { requestLogsSegment } from '../../lib/logsSegmentRequest';
 
@@ -135,6 +138,13 @@ export default function HomeScreen() {
   const { items: dietLogs }   = useDietLogs();
   const { items: routines }   = useRoutines();
 
+  // AI Companion
+  const companion = useCompanion();
+  const [showCompanionSheet, setShowCompanionSheet] = useState(false);
+
+  // Log Workout sheet
+  const [showWorkoutSheet, setShowWorkoutSheet] = useState(false);
+
   // Body heatmap side toggle
   const [heatSide, setHeatSide] = useState<'front' | 'back'>('front');
 
@@ -237,10 +247,17 @@ export default function HomeScreen() {
 
         {/* ── Greeting ───────────────────────────────────── */}
         <View style={styles.greetingBlock}>
-          <Text style={styles.greetingText}>
-            {greeting()}{nameLabel ? `, ${nameLabel}` : ''}
-          </Text>
-          <Text style={styles.dateText}>{fmtDate(new Date())}</Text>
+          <View style={styles.greetingRow}>
+            <View>
+              <Text style={styles.greetingText}>
+                {greeting()}{nameLabel ? `, ${nameLabel}` : ''}
+              </Text>
+              <Text style={styles.dateText}>{fmtDate(new Date())}</Text>
+            </View>
+            {companion.enabled && (
+              <CompanionAvatarButton onPress={() => setShowCompanionSheet(true)} />
+            )}
+          </View>
         </View>
 
         {/* ── Body Score hero ────────────────────────────── */}
@@ -376,7 +393,7 @@ export default function HomeScreen() {
         {/* ── Quick actions ──────────────────────────────── */}
         <SectionRow label="Quick Actions" />
         <View style={styles.actionsRow}>
-          <ActionBtn icon={Dumbbell} label="Start Workout" onPress={() => router.push('/(tabs)/routines')} />
+          <ActionBtn icon={Dumbbell} label="Log Workout" onPress={() => setShowWorkoutSheet(true)} />
           <ActionBtn icon={Plus}    label="Log Food"       onPress={() => { requestLogsSegment('diet');  router.push('/(tabs)/logs'); }} />
           <ActionBtn icon={Moon}    label="Log Sleep"      onPress={() => { requestLogsSegment('sleep'); router.push('/(tabs)/logs'); }} />
         </View>
@@ -531,6 +548,81 @@ export default function HomeScreen() {
         )}
 
       </ScrollView>
+
+      {/* ── AI Companion tutorial ─────────────────────── */}
+      <CompanionTutorial
+        visible={!companion.tutorialSeen}
+        personality={companion.personality}
+        categories={companion.categories}
+        onComplete={(granted) => {
+          companion.setNotificationsGranted(granted);
+          companion.markTutorialSeen();
+        }}
+      />
+
+      {/* ── Companion sheet ────────────────────────────── */}
+      <CompanionSheet
+        visible={showCompanionSheet}
+        onClose={() => setShowCompanionSheet(false)}
+        personality={companion.personality}
+        onOpenSettings={() => router.push('/(modals)/companion-settings')}
+      />
+
+      {/* ── Log Workout sheet ──────────────────────────── */}
+      <Sheet visible={showWorkoutSheet} onClose={() => setShowWorkoutSheet(false)}>
+        <Text style={styles.wkSheetTitle}>Log Workout</Text>
+        <View style={styles.wkSheetDivider} />
+
+        {/* Option: pick a saved routine */}
+        <Pressable
+          style={styles.wkSheetRow}
+          onPress={() => {
+            setShowWorkoutSheet(false);
+            setTimeout(() => router.push('/(tabs)/routines'), 300);
+          }}
+        >
+          <View style={styles.wkSheetIconWrap}>
+            <Dumbbell size={18} color={colors.accent} strokeWidth={1.75} />
+          </View>
+          <View style={styles.wkSheetRowText}>
+            <Text style={styles.wkSheetRowLabel}>Start a Routine</Text>
+            <Text style={styles.wkSheetRowCaption}>Choose from your saved routines</Text>
+          </View>
+          <ChevronRight size={16} color={colors.ink4} strokeWidth={1.75} />
+        </Pressable>
+
+        <View style={styles.wkSheetDivider} />
+
+        {/* Option: freestyle / no plan */}
+        <Pressable
+          style={styles.wkSheetRow}
+          onPress={() => {
+            setShowWorkoutSheet(false);
+            setTimeout(
+              () => router.push('/(modals)/active-workout?mode=freestyle'),
+              300,
+            );
+          }}
+        >
+          <View style={styles.wkSheetIconWrap}>
+            <Zap size={18} color={colors.accent} strokeWidth={1.75} />
+          </View>
+          <View style={styles.wkSheetRowText}>
+            <Text style={styles.wkSheetRowLabel}>Freestyle Workout</Text>
+            <Text style={styles.wkSheetRowCaption}>Log any exercises without a plan</Text>
+          </View>
+          <ChevronRight size={16} color={colors.ink4} strokeWidth={1.75} />
+        </Pressable>
+
+        <View style={[styles.wkSheetCancel, { paddingBottom: insets.bottom + spacing.lg }]}>
+          <Button
+            label="Cancel"
+            variant="secondary"
+            fullWidth
+            onPress={() => setShowWorkoutSheet(false)}
+          />
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -682,6 +774,11 @@ const styles = StyleSheet.create({
 
   // Greeting
   greetingBlock: { marginBottom: spacing.xs } satisfies ViewStyle,
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  } satisfies ViewStyle,
   greetingText:  { ...(typography.heading as TextStyle) } satisfies TextStyle,
   dateText: { ...(typography.caption as TextStyle), color: colors.ink3, marginTop: 2 } satisfies TextStyle,
 
@@ -800,6 +897,41 @@ const styles = StyleSheet.create({
   macroLabel: { ...(typography.label as TextStyle), fontSize: 11, fontWeight: '700' } satisfies TextStyle,
   macroVal:   { ...(typography.bodyMedium as TextStyle), fontSize: 13 } satisfies TextStyle,
   nutritionMeta: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+
+  // Log Workout sheet
+  wkSheetTitle: {
+    ...(typography.subheading as TextStyle),
+    paddingHorizontal: spacing['2xl'],
+    marginBottom: spacing.lg,
+  } satisfies TextStyle,
+  wkSheetDivider: { height: 1, backgroundColor: colors.surfaceElevBorder } satisfies ViewStyle,
+  wkSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing.lg,
+  } satisfies ViewStyle,
+  wkSheetIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.input,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  } satisfies ViewStyle,
+  wkSheetRowText: { flex: 1 } satisfies ViewStyle,
+  wkSheetRowLabel: { ...(typography.bodyMedium as TextStyle) } satisfies TextStyle,
+  wkSheetRowCaption: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+    marginTop: 2,
+  } satisfies TextStyle,
+  wkSheetCancel: {
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: spacing.md,
+  } satisfies ViewStyle,
 
   // Sleep
   sleepRow:   { flexDirection: 'row', alignItems: 'center', gap: spacing.md } satisfies ViewStyle,

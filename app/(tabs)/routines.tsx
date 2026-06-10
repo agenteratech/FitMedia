@@ -12,7 +12,7 @@ import {
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Dumbbell, Plus, Trash2 } from 'lucide-react-native';
+import { ChevronRight, Dumbbell, Plus, Trash2, Pencil } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { useRoutines } from '../../hooks/useRoutines';
@@ -233,6 +233,20 @@ export default function RoutinesScreen() {
         <View style={styles.sheetDivider} />
         <Pressable
           style={styles.sheetRow}
+          onPress={() => {
+            setSheetRoutineId(null);
+            setTimeout(
+              () => router.push(`/(modals)/edit-routine?routineId=${sheetRoutineId}`),
+              300,
+            );
+          }}
+        >
+          <Pencil size={20} color={colors.ink2} strokeWidth={1.75} />
+          <Text style={styles.sheetLabel}>Edit Routine</Text>
+        </Pressable>
+        <View style={styles.sheetDivider} />
+        <Pressable
+          style={styles.sheetRow}
           onPress={() => confirmDelete(sheetRoutineId!, sheetRoutine?.name ?? '')}
         >
           <Trash2 size={20} color={colors.alert} strokeWidth={1.75} />
@@ -425,6 +439,7 @@ export default function RoutinesScreen() {
               <RoutineCard
                 key={r.id}
                 routine={routineToSummary(r)}
+                onPress={() => router.push(`/(modals)/edit-routine?routineId=${r.id}`)}
                 onStart={() => handleStartRoutine(r.id)}
                 onMore={() => setSheetRoutineId(r.id)}
               />
@@ -545,6 +560,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing['2xl'],
     paddingVertical: spacing.lg,
   } satisfies ViewStyle,
+  sheetLabel: { ...(typography.body as TextStyle), color: colors.ink1 } satisfies TextStyle,
   sheetDestructiveLabel: { ...(typography.body as TextStyle), color: colors.alert } satisfies TextStyle,
   sheetCancelWrap: { paddingHorizontal: spacing['2xl'], paddingTop: spacing.md } satisfies ViewStyle,
 

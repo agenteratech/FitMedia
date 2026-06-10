@@ -4,15 +4,18 @@ import {
   StyleSheet,
   Text,
   View,
+  Pressable,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { ChevronRight, Sparkles } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { Input, Button, Chip, Card } from '../../src/components/primitives';
-import { colors, spacing, typography } from '../../src/theme';
+import { colors, spacing, typography, radius } from '../../src/theme';
 import type { Database } from '../../types/database';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
@@ -44,6 +47,7 @@ const DIET_OPTIONS = [
 ] as const;
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const [profile, setProfile] = useState<UserRow | null>(null);
   const [loading, setLoading] = useState(false);
@@ -172,6 +176,21 @@ export default function ProfileScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 96 }]}
       >
         <Text style={typography.heading}>Profile</Text>
+
+        {/* AI Companion shortcut */}
+        <Pressable
+          style={({ pressed }) => [styles.companionCard, pressed && styles.companionCardPressed]}
+          onPress={() => router.push('/(modals)/companion-settings')}
+        >
+          <View style={styles.companionAvatar}>
+            <Sparkles size={18} color={colors.accent} strokeWidth={1.75} />
+          </View>
+          <View style={styles.companionText}>
+            <Text style={styles.companionLabel}>AI Companion · Aria</Text>
+            <Text style={styles.companionCaption}>Personality, notifications &amp; reminders</Text>
+          </View>
+          <ChevronRight size={16} color={colors.ink4} strokeWidth={1.75} />
+        </Pressable>
 
         {loading ? (
           <Text style={styles.status}>Loading profile…</Text>
@@ -337,6 +356,35 @@ const styles = StyleSheet.create({
   successText: {
     ...(typography.caption as TextStyle),
     color: colors.success,
+  } satisfies TextStyle,
+  companionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.accent + '40',
+    padding: spacing.lg,
+  } satisfies ViewStyle,
+  companionCardPressed: { opacity: 0.75 } satisfies ViewStyle,
+  companionAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  } satisfies ViewStyle,
+  companionText: { flex: 1 } satisfies ViewStyle,
+  companionLabel: { ...(typography.bodyMedium as TextStyle) } satisfies TextStyle,
+  companionCaption: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+    marginTop: 2,
   } satisfies TextStyle,
   fieldLabel: {
     ...(typography.label as TextStyle),

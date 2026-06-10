@@ -10,6 +10,7 @@ export type AuthState = {
   loading: boolean;
   error: string | null;
   initialized: boolean;
+  confirmationPending: boolean;
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
@@ -41,6 +42,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: false,
   error: null,
   initialized: false,
+  confirmationPending: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -113,12 +115,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUp: async (email, password) => {
-    set({ loading: true, error: null });
-    const { error } = await supabase.auth.signUp({ email, password });
+    set({ loading: true, error: null, confirmationPending: false });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) {
       set({ error: error.message, loading: false });
       return;
     }
+    // Supabase returns session=null when email confirmation is required.
+    // The SIGNED_IN event won't fire until the user clicks the link.
+    if (!data.session && data.user) {
+      set({ loading: false, confirmationPending: true });
+      return;
+    }
+    // Auto-confirmed (email confirmation disabled in Supabase) — onAuthStateChange handles the rest.
     set({ loading: false });
   },
 

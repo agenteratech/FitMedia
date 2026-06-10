@@ -51,13 +51,14 @@ export default function BasicInfoScreen() {
 
     const { error: updateError } = await supabase
       .from('users')
-      .update({
+      .upsert({
+        id: user.id,
+        email: user.email ?? '',
         gender,
         age: ageValue,
         height_cm: heightCm,
         weight_kg: weightKg,
-      })
-      .eq('id', user.id);
+      }, { onConflict: 'id' });
 
     if (updateError) {
       setError(updateError.message);
