@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import * as Linking from 'expo-linking';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { deleteJSON, storageKeys } from '../lib/storage';
@@ -11,10 +12,17 @@ export type AuthState = {
   error: string | null;
   initialized: boolean;
   confirmationPending: boolean;
+  /** True while a password-recovery session is active (user came from a reset email). */
+  passwordRecovery: boolean;
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Sends a password-reset email. Returns an error message, or null on success. */
+  sendPasswordReset: (email: string) => Promise<string | null>;
+  /** Sets a new password for the recovering user. Returns an error message, or null on success. */
+  updatePassword: (newPassword: string) => Promise<string | null>;
+  clearPasswordRecovery: () => void;
   clearError: () => void;
   setOnboardingComplete: () => void;
 };
@@ -43,6 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
   initialized: false,
   confirmationPending: false,
+  passwordRecovery: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -71,7 +80,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const { data: authData } = supabase.auth.onAuthStateChange(async (event, session) => {
           try {
             if (event === 'SIGNED_OUT') {
-              set({ session: null, user: null, onboardingComplete: null, error: null });
+              set({ session: null, user: null, onboardingComplete: null, error: null, passwordRecovery: false });
+              return;
+            }
+            if (event === 'PASSWORD_RECOVERY') {
+              // User opened a reset link — they now have a temporary session
+              // and must set a new password before using the app.
+              set({ session, user: session?.user ?? null, passwordRecovery: true, error: null });
               return;
             }
             if (event === 'SIGNED_IN') {
@@ -152,6 +167,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     authSubscription?.unsubscribe();
     authSubscription = null;
   },
+
+  sendPasswordReset: async (email) => {
+    const trimmed = email.trim();
+    if (!trimmed) return 'Please enter your email address.';
+    // Basic shape check so we give a friendly message before hitting the network.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return 'Please enter a valid email address.';
+    }
+    const redirectTo = Linking.createURL('/auth/reset-password');
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
+    return error?.message ?? null;
+  },
+
+  updatePassword: async (newPassword) => {
+    if (!newPassword || newPassword.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return error.message;
+    set({ passwordRecovery: false });
+    return null;
+  },
+
+  clearPasswordRecovery: () => set({ passwordRecovery: false }),
 
   clearError: () => set({ error: null }),
 

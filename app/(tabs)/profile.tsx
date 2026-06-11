@@ -5,13 +5,16 @@ import {
   Text,
   View,
   Pressable,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Sparkles } from 'lucide-react-native';
+import { ChevronRight, Sparkles, LogOut } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import { Input, Button, Chip, Card } from '../../src/components/primitives';
@@ -48,7 +51,18 @@ const DIET_OPTIONS = [
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, signOut } = useAuthStore();
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Log out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: () => { signOut(); } },
+      ],
+    );
+  };
   const [profile, setProfile] = useState<UserRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -187,8 +201,13 @@ export default function ProfileScreen() {
   // ── render ─────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 96 }]}
       >
         <Text style={typography.heading}>Profile</Text>
@@ -336,7 +355,17 @@ export default function ProfileScreen() {
           onPress={handleSave}
           disabled={saving}
         />
+
+        {/* Logout — near the bottom of the page, visually separated */}
+        <Pressable
+          style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
+          onPress={handleLogout}
+        >
+          <LogOut size={18} color={colors.alert} strokeWidth={1.75} />
+          <Text style={styles.logoutLabel}>Log Out</Text>
+        </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -346,11 +375,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   } satisfies ViewStyle,
+  kav: { flex: 1 } satisfies ViewStyle,
   scroll: {
     paddingHorizontal: spacing['2xl'],
     paddingTop: spacing.lg,
     gap: spacing.md,
   } satisfies ViewStyle,
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    height: 56,
+    borderRadius: radius.button,
+    borderWidth: 1,
+    borderColor: colors.alert,
+    backgroundColor: 'transparent',
+    marginTop: spacing.sm,
+  } satisfies ViewStyle,
+  logoutBtnPressed: { opacity: 0.7 } satisfies ViewStyle,
+  logoutLabel: {
+    ...(typography.bodyMedium as TextStyle),
+    color: colors.alert,
+  } satisfies TextStyle,
   status: {
     ...(typography.caption as TextStyle),
     color: colors.ink3,

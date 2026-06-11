@@ -4,6 +4,8 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
@@ -72,6 +74,10 @@ export default function BasicInfoScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -166,12 +172,14 @@ export default function BasicInfoScreen() {
           onPress={handleContinue}
         />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg } satisfies ViewStyle,
+  kav: { flex: 1 } satisfies ViewStyle,
   scroll: { flex: 1 } satisfies ViewStyle,
   content: {
     paddingHorizontal: spacing['2xl'],

@@ -22,6 +22,7 @@ export default function RootLayout() {
   const session = useAuthStore((state) => state.session);
   const onboardingComplete = useAuthStore((state) => state.onboardingComplete);
   const initialized = useAuthStore((state) => state.initialized);
+  const passwordRecovery = useAuthStore((state) => state.passwordRecovery);
   const init = useAuthStore((state) => state.init);
   const segments = useSegments();
   const router = useRouter();
@@ -38,6 +39,16 @@ export default function RootLayout() {
     const inAuthGroup = segments[0] === 'auth';
     const inOnboarding = segments[0] === 'onboarding';
     const atIndex = !segments[0] || segments[0] === 'index';
+
+    // Password recovery takes priority over every other route. The user has a
+    // temporary session but must set a new password before doing anything else.
+    if (passwordRecovery) {
+      const onResetScreen = (segments as string[]).join('/') === 'auth/reset-password';
+      if (!onResetScreen) {
+        router.replace('/auth/reset-password');
+      }
+      return;
+    }
 
     if (!session) {
       if (!inAuthGroup) {
@@ -56,7 +67,7 @@ export default function RootLayout() {
     if (onboardingComplete === true && (inAuthGroup || inOnboarding || atIndex)) {
       router.replace('/(tabs)/home');
     }
-  }, [initialized, onboardingComplete, router, segments, session]);
+  }, [initialized, onboardingComplete, router, segments, session, passwordRecovery]);
 
   if (!fontsLoaded || !initialized) {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;

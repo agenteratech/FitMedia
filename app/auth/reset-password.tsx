@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  Pressable,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -11,21 +10,61 @@ import {
   type TextStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
 import { Input, Button, Card } from '../../src/components/primitives';
 import { colors, spacing, typography } from '../../src/theme';
 
-export default function LoginScreen() {
+export default function ResetPasswordScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const { updatePassword, clearPasswordRecovery, signOut } = useAuthStore();
   const [password, setPassword] = useState('');
-  const { signIn, loading, error, clearError } = useAuthStore();
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
   const handleSubmit = async () => {
-    clearError();
-    await signIn(email.trim(), password);
+    setError(null);
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    const err = await updatePassword(password);
+    setLoading(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setDone(true);
   };
+
+  if (done) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.confirmContainer}>
+          <Text style={[styles.title, styles.centerText]}>Password updated</Text>
+          <Text style={[styles.subtitle, styles.centerText]}>
+            Your password has been changed. Please sign in with your new password.
+          </Text>
+          <Button
+            label="Go to Sign In"
+            fullWidth
+            onPress={async () => {
+              clearPasswordRecovery();
+              await signOut();
+              router.replace('/auth/login');
+            }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -43,52 +82,35 @@ export default function LoginScreen() {
           </View>
 
           <Card padding="comfortable" style={styles.card}>
-            <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to continue your journey.</Text>
+            <Text style={styles.title}>Set a new password</Text>
+            <Text style={styles.subtitle}>Choose a new password for your account.</Text>
 
             <View style={styles.fields}>
               <Input
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <Input
-                label="Password"
+                label="New password"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
                 autoCapitalize="none"
               />
+              <Input
+                label="Confirm password"
+                value={confirm}
+                onChangeText={setConfirm}
+                secureTextEntry
+                autoCapitalize="none"
+              />
             </View>
-
-            <Pressable
-              onPress={() => router.push('/auth/forgot-password')}
-              hitSlop={8}
-              style={styles.forgotBtn}
-            >
-              <Text style={styles.forgotLink}>Forgot password?</Text>
-            </Pressable>
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <Button
-              label={loading ? 'Signing in…' : 'Sign In'}
+              label={loading ? 'Updating…' : 'Update Password'}
               fullWidth
               disabled={loading}
               onPress={handleSubmit}
             />
           </Card>
-
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>New here?</Text>
-            <Link href="/auth/signup" asChild>
-              <Pressable hitSlop={8}>
-                <Text style={styles.footerLink}>Create an account</Text>
-              </Pressable>
-            </Link>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -119,33 +141,17 @@ const styles = StyleSheet.create({
     color: colors.ink3,
   } satisfies TextStyle,
   fields: { gap: spacing.sm } satisfies ViewStyle,
-  forgotBtn: {
-    alignSelf: 'flex-end',
-    marginTop: -spacing.xs,
-  } satisfies ViewStyle,
-  forgotLink: {
-    ...(typography.bodyMedium as TextStyle),
-    color: colors.accent,
-    fontSize: 13,
-  } satisfies TextStyle,
   errorText: {
     ...(typography.caption as TextStyle),
     color: colors.alert,
     textAlign: 'center',
   } satisfies TextStyle,
-  footer: {
-    flexDirection: 'row',
+  confirmContainer: {
+    flex: 1,
     justifyContent: 'center',
+    paddingHorizontal: spacing['2xl'],
+    gap: spacing.lg,
     alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xl,
   } satisfies ViewStyle,
-  footerText: {
-    ...(typography.body as TextStyle),
-    color: colors.ink3,
-  } satisfies TextStyle,
-  footerLink: {
-    ...(typography.bodyMedium as TextStyle),
-    color: colors.accent,
-  } satisfies TextStyle,
+  centerText: { textAlign: 'center' } satisfies TextStyle,
 });
