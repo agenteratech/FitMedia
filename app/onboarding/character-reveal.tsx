@@ -332,6 +332,7 @@ const styles = StyleSheet.create({
   } satisfies ViewStyle,
   ringCenter: {
     position: 'absolute',
+    inset: 0,             // fills the ring container so content centres correctly
     alignItems: 'center',
     justifyContent: 'center',
   } satisfies ViewStyle,

@@ -6,6 +6,7 @@ export type RoutineExerciseDraft = {
   order: number;
   defaultSets: number;
   defaultReps: number;
+  defaultWeight: number; // stored in MMKV, not in the DB schema
 };
 
 export type RoutineDraftState = {
@@ -14,12 +15,12 @@ export type RoutineDraftState = {
   setName: (name: string) => void;
   /** Bulk-replace exercises (used when loading an existing routine for editing). */
   setExercises: (exercises: RoutineExerciseDraft[]) => void;
-  addExercise: (exercise: Omit<RoutineExerciseDraft, 'order'>) => void;
+  addExercise: (exercise: Omit<RoutineExerciseDraft, 'order' | 'defaultWeight'>) => void;
   removeExercise: (exerciseId: string) => void;
-  /** Patch sets or reps for a specific exercise. */
+  /** Patch sets, reps, or weight for a specific exercise. */
   updateExercise: (
     exerciseId: string,
-    patch: Partial<Pick<RoutineExerciseDraft, 'defaultSets' | 'defaultReps'>>,
+    patch: Partial<Pick<RoutineExerciseDraft, 'defaultSets' | 'defaultReps' | 'defaultWeight'>>,
   ) => void;
   /** Move an exercise one position up or down, keeping order values sequential. */
   moveExercise: (exerciseId: string, direction: 'up' | 'down') => void;
@@ -40,7 +41,12 @@ export const useRoutineStore = create<RoutineDraftState>((set) => ({
         return state;
       }
       const order = state.exercises.length;
-      return { exercises: [...state.exercises, { ...exercise, order }] };
+      return {
+        exercises: [
+          ...state.exercises,
+          { defaultWeight: 0, ...exercise, order },
+        ],
+      };
     }),
 
   removeExercise: (exerciseId) =>

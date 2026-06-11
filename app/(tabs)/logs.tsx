@@ -5,6 +5,7 @@ import {
   ScrollView,
   Pressable,
   Modal,
+  Alert,
   StyleSheet,
   TextInput,
   ActivityIndicator,
@@ -15,9 +16,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg';
 import Slider from '@react-native-community/slider';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap } from 'lucide-react-native';
+import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2 } from 'lucide-react-native';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
-import { useDietLogs } from '../../hooks/useDietLogs';
+import { useDietLogs, type DietLog } from '../../hooks/useDietLogs';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase';
@@ -184,6 +185,8 @@ export default function LogsScreen() {
   // Sheet state
   const [addFoodMealType, setAddFoodMealType] = useState<string | null>(null);
   const [logSleepOpen, setLogSleepOpen] = useState(false);
+  const [optionsEntry, setOptionsEntry] = useState<DietLog | null>(null);
+  const [editingEntry, setEditingEntry] = useState<DietLog | null>(null);
 
   // ── Workout data ──────────────────────────────────────────────────────
   const todayWorkouts = useMemo(
@@ -280,6 +283,7 @@ export default function LogsScreen() {
             byMeal={dietByMeal}
             loading={dietLoading}
             onAddFood={(mealType) => setAddFoodMealType(mealType)}
+            onItemOptions={(entry) => setOptionsEntry(entry)}
             calorieTarget={calTarget}
           />
         )}
@@ -302,6 +306,50 @@ export default function LogsScreen() {
         userId={user?.id ?? ''}
         onClose={() => setAddFoodMealType(null)}
         onSaved={() => { setAddFoodMealType(null); refetchDiet(); }}
+      />
+
+      {/* Food options sheet — always mounted, shown when a ··· is tapped */}
+      <FoodOptionsSheet
+        entry={optionsEntry}
+        visible={optionsEntry !== null}
+        onClose={() => setOptionsEntry(null)}
+        onEdit={() => {
+          const entry = optionsEntry;
+          setOptionsEntry(null);
+          setTimeout(() => setEditingEntry(entry), 300);
+        }}
+        onDelete={() => {
+          const entry = optionsEntry;
+          setOptionsEntry(null);
+          setTimeout(() => {
+            Alert.alert(
+              'Delete Meal',
+              `Delete "${entry?.description || 'this meal'}"? This cannot be undone.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    if (!entry || !user) return;
+                    await supabase.from('diet_logs').delete().eq('id', entry.id).eq('user_id', user.id);
+                    refetchDiet();
+                    recalculateScores().catch(console.error);
+                  },
+                },
+              ],
+            );
+          }, 350);
+        }}
+      />
+
+      {/* Edit food sheet — always mounted, shown when editing an entry */}
+      <EditFoodSheet
+        entry={editingEntry}
+        visible={editingEntry !== null}
+        userId={user?.id ?? ''}
+        onClose={() => setEditingEntry(null)}
+        onSaved={() => { setEditingEntry(null); refetchDiet(); }}
       />
 
       {/* Log sleep sheet */}
@@ -412,6 +460,7 @@ function DietSegment({
   byMeal,
   loading,
   onAddFood,
+  onItemOptions,
   calorieTarget,
 }: {
   selectedDate: Date;
@@ -422,6 +471,7 @@ function DietSegment({
   byMeal: DietByMeal;
   loading: boolean;
   onAddFood: (mealType: string) => void;
+  onItemOptions: (entry: DietLog) => void;
   calorieTarget: number;
 }) {
   const ringOffset = CAL_CIRC * (1 - Math.min(totals.calories / calorieTarget, 1));
@@ -484,11 +534,23 @@ function DietSegment({
             </View>
             {entries.map((e) => (
               <View key={e.id} style={styles.foodRow}>
-                <View style={styles.foodRowInfo}>
-                  {e.description ? <Text style={styles.foodDesc}>{e.description}</Text> : null}
-                  <Text style={styles.foodMacros} numberOfLines={1}>
-                    {Math.round(e.calories)} kcal · P {Math.round(e.protein_g)}g · C {Math.round(e.carbs_g)}g · F {Math.round(e.fats_g)}g
-                  </Text>
+                <View style={styles.foodRowContent}>
+                  <View style={styles.foodRowInfo}>
+                    {e.description ? (
+                      <Text style={styles.foodDesc} numberOfLines={2}>{e.description}</Text>
+                    ) : null}
+                    <Text style={styles.foodMacros} numberOfLines={1}>
+                      {Math.round(e.calories)} kcal · P {Math.round(e.protein_g)}g · C {Math.round(e.carbs_g)}g · F {Math.round(e.fats_g)}g
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => onItemOptions(e)}
+                    hitSlop={10}
+                    style={styles.foodRowMore}
+                    accessibilityLabel="More options"
+                  >
+                    <MoreHorizontal size={16} color={colors.ink4} strokeWidth={1.75} />
+                  </Pressable>
                 </View>
               </View>
             ))}
@@ -1010,6 +1072,156 @@ function ManualFoodView({
   );
 }
 
+// ── FoodOptionsSheet ──────────────────────────────────────────────────────
+
+function FoodOptionsSheet({
+  entry,
+  visible,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  entry: DietLog | null;
+  visible: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.optSheetHead}>
+        <Text style={styles.optSheetTitle} numberOfLines={2}>
+          {entry?.description || 'Meal entry'}
+        </Text>
+        {entry ? (
+          <Text style={styles.optSheetSub}>
+            {Math.round(entry.calories)} kcal
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.optSheetDivider} />
+      <Pressable style={styles.optSheetRow} onPress={onEdit}>
+        <Pencil size={19} color={colors.ink2} strokeWidth={1.75} />
+        <Text style={styles.optSheetLabel}>Edit Meal</Text>
+      </Pressable>
+      <View style={styles.optSheetDivider} />
+      <Pressable style={styles.optSheetRow} onPress={onDelete}>
+        <Trash2 size={19} color={colors.alert} strokeWidth={1.75} />
+        <Text style={styles.optSheetDestructive}>Delete Meal</Text>
+      </Pressable>
+      <View style={[styles.optSheetCancel, { paddingBottom: insets.bottom + spacing.lg }]}>
+        <Button label="Cancel" variant="secondary" fullWidth onPress={onClose} />
+      </View>
+    </Sheet>
+  );
+}
+
+// ── EditFoodSheet ──────────────────────────────────────────────────────────
+
+function EditFoodSheet({
+  entry,
+  visible,
+  userId,
+  onClose,
+  onSaved,
+}: {
+  entry: DietLog | null;
+  visible: boolean;
+  userId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [description, setDescription] = useState('');
+  const [calories, setCalories] = useState('');
+  const [protein, setProtein] = useState('');
+  const [carbs, setCarbs] = useState('');
+  const [fats, setFats] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-initialise form whenever we switch to a different entry.
+  useEffect(() => {
+    if (!entry) return;
+    setDescription(entry.description ?? '');
+    setCalories(String(Math.round(entry.calories)));
+    setProtein(String(entry.protein_g));
+    setCarbs(String(entry.carbs_g));
+    setFats(String(entry.fats_g));
+    setError(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.id]);
+
+  const handleSave = async () => {
+    if (!entry || !userId) return;
+    setSaving(true);
+    setError(null);
+    const { error: saveError } = await saveDietLog({
+      userId,
+      date: '',           // unused for edits
+      mealType: entry.meal_type ?? 'snack',
+      description,
+      calories: Number(calories) || 0,
+      protein:  Number(protein)  || 0,
+      carbs:    Number(carbs)    || 0,
+      fats:     Number(fats)     || 0,
+      editingId: entry.id,
+    });
+    setSaving(false);
+    if (saveError) { setError(saveError); return; }
+    recalculateScores().catch(console.error);
+    onSaved();
+  };
+
+  return (
+    <Sheet visible={visible} onClose={onClose} snapPoints={['75%']}>
+      <View style={styles.sheetHeader}>
+        <View style={styles.sheetBackBtn} />
+        <Text style={styles.sheetTitle}>Edit Meal</Text>
+        <Pressable onPress={onClose} style={styles.sheetBackBtn}>
+          <X size={20} color={colors.ink2} strokeWidth={1.75} />
+        </Pressable>
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.sheetBody}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Input
+          label="Description (optional)"
+          value={description}
+          onChangeText={setDescription}
+          autoCapitalize="sentences"
+        />
+        <Input
+          label="Calories (kcal)"
+          value={calories}
+          onChangeText={setCalories}
+          keyboardType="decimal-pad"
+        />
+        <View style={styles.macroRow}>
+          <View style={{ flex: 1 }}>
+            <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="decimal-pad" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input label="Fat (g)" value={fats} onChangeText={setFats} keyboardType="decimal-pad" />
+          </View>
+        </View>
+        {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+        <Button
+          label={saving ? 'Saving…' : 'Save Changes'}
+          fullWidth
+          disabled={saving}
+          onPress={handleSave}
+        />
+      </ScrollView>
+    </Sheet>
+  );
+}
+
 // ── LogSleepSheet ──────────────────────────────────────────────────────────
 function LogSleepSheet({
   visible,
@@ -1310,9 +1522,34 @@ const styles = StyleSheet.create({
   mealTitle: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
   mealCals: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
   foodRow: { paddingVertical: spacing.xs, borderTopWidth: 1, borderTopColor: colors.divider } satisfies ViewStyle,
-  foodRowInfo: { gap: 2 } satisfies ViewStyle,
+  foodRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  } satisfies ViewStyle,
+  foodRowInfo: { flex: 1, gap: 2 } satisfies ViewStyle,
+  foodRowMore: { flexShrink: 0, paddingVertical: spacing.xs } satisfies ViewStyle,
   foodDesc: { ...(typography.bodyMedium as TextStyle), fontSize: 14 } satisfies TextStyle,
   foodMacros: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+
+  // Food options sheet
+  optSheetHead: { paddingHorizontal: spacing['2xl'], marginBottom: spacing.md } satisfies ViewStyle,
+  optSheetTitle: { ...(typography.subheading as TextStyle), marginBottom: spacing.xs } satisfies TextStyle,
+  optSheetSub: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  optSheetDivider: { height: 1, backgroundColor: colors.surfaceElevBorder } satisfies ViewStyle,
+  optSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing.lg,
+  } satisfies ViewStyle,
+  optSheetLabel: { ...(typography.body as TextStyle), color: colors.ink1 } satisfies TextStyle,
+  optSheetDestructive: { ...(typography.body as TextStyle), color: colors.alert } satisfies TextStyle,
+  optSheetCancel: {
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: spacing.md,
+  } satisfies ViewStyle,
   addFoodRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingTop: spacing.md } satisfies ViewStyle,
   addFoodLabel: { ...(typography.bodyMedium as TextStyle), color: colors.accent, fontSize: 14 } satisfies TextStyle,
 

@@ -84,7 +84,7 @@ export function ExerciseCard({
         <View style={{ flex: 0.75, alignItems: 'center' }}>
           <Text style={styles.colLabel}>RIR</Text>
         </View>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 28 }} />
       </View>
 
       {/* Set rows */}

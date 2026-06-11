@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   Pressable,
   Alert,
   StyleSheet,
@@ -10,12 +9,21 @@ import {
   type TextStyle,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import {
+  NestableScrollContainer,
+  NestableDraggableFlatList,
+  ScaleDecorator,
+  type RenderItemParams,
+} from 'react-native-draggable-flatlist';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Dumbbell, Plus, Trash2, Pencil } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { getJSON, storageKeys } from '../../lib/storage';
 import { primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { useRoutines } from '../../hooks/useRoutines';
+import { useRoutineOrder } from '../../hooks/useRoutineOrder';
+import type { RoutineItem } from '../../hooks/useRoutines';
 import { useAuthStore } from '../../stores/authStore';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { RoutineCard, Button, Chip, Sheet } from '../../src/components/primitives';
@@ -66,6 +74,9 @@ export default function RoutinesScreen() {
 
   const [filter, setFilter] = useState<Filter>('All');
 
+  // Custom sort order persisted in MMKV
+  const { orderedItems, setOrder } = useRoutineOrder(items);
+
   // Options sheet for user routines
   const [sheetRoutineId, setSheetRoutineId] = useState<string | null>(null);
   const sheetRoutine = useMemo(
@@ -79,9 +90,9 @@ export default function RoutinesScreen() {
   const [adding, setAdding] = useState(false);
 
   const filtered = useMemo(() => {
-    if (filter === 'All' || filter === 'Full Body') return items;
+    if (filter === 'All' || filter === 'Full Body') return orderedItems;
     const keywords = FILTER_MUSCLES[filter] ?? [];
-    return items.filter((r) => {
+    return orderedItems.filter((r) => {
       if (r.name.toLowerCase().includes(filter.toLowerCase())) return true;
       return r.user_routine_exercises.some((rex) => {
         const raw = rex.exercises?.primary_muscles;
@@ -94,19 +105,21 @@ export default function RoutinesScreen() {
   const handleStartRoutine = (routineId: string) => {
     const routine = items.find((r) => r.id === routineId);
     if (!routine) return;
+    const weightCache = getJSON<Record<string, number>>(storageKeys.routineWeights) ?? {};
     reset();
     setWorkoutType(routine.name);
     setStartedAt(new Date().toISOString());
     [...routine.user_routine_exercises]
       .sort((a, b) => a.order_index - b.order_index)
       .forEach((rex, idx) => {
+        const defaultWeight = weightCache[`${routineId}_${rex.exercise_id}`] ?? 0;
         upsertExercise({
           exerciseId:    rex.exercise_id,
           name:          rex.exercises?.name ?? 'Exercise',
           primaryMuscle: primaryMuscleLabel(rex.exercises?.primary_muscles),
           orderIndex: idx,
           sets: Array.from({ length: rex.default_sets }, (_, i) => ({
-            setNumber: i + 1, weight: 0, reps: rex.default_reps, completed: false, isPR: false,
+            setNumber: i + 1, weight: defaultWeight, reps: rex.default_reps, completed: false, isPR: false,
           })),
         });
       });
@@ -126,6 +139,26 @@ export default function RoutinesScreen() {
     if (error) Alert.alert('Error', 'Could not delete routine. Please try again.');
     else refetch();
   };
+
+  // Drag-and-drop render item
+  const renderRoutineItem = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<RoutineItem>) => (
+      <ScaleDecorator activeScale={0.97}>
+        <View style={styles.draggableItem}>
+          <RoutineCard
+            routine={routineToSummary(item)}
+            onPress={() => router.push(`/(modals)/edit-routine?routineId=${item.id}`)}
+            onStart={() => handleStartRoutine(item.id)}
+            onMore={() => setSheetRoutineId(item.id)}
+            onDragStart={drag}
+            isDragging={isActive}
+          />
+        </View>
+      </ScaleDecorator>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, router],
+  );
 
   const confirmDelete = (routineId: string, name: string) => {
     setSheetRoutineId(null);
@@ -215,7 +248,7 @@ export default function RoutinesScreen() {
           </Pressable>
         </View>
 
-        <ScrollView
+        <GHScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filtersRow}
@@ -224,7 +257,7 @@ export default function RoutinesScreen() {
           {FILTERS.map((chip) => (
             <Chip key={chip} label={chip} selected={filter === chip} onPress={() => setFilter(chip)} />
           ))}
-        </ScrollView>
+        </GHScrollView>
       </View>
 
       {/* ── Options sheet (delete user routine) ────────────────── */}
@@ -361,16 +394,17 @@ export default function RoutinesScreen() {
       </Sheet>
 
       {/* ── Main scrollable content ─────────────────────────────── */}
-      <ScrollView
+      {/* NestableScrollContainer lets NestableDraggableFlatList handle  */}
+      {/* drag gestures without conflicting with the outer scroll.       */}
+      <NestableScrollContainer
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Explore Templates ─────────────────────────────────── */}
         <Text style={styles.sectionLabel}>EXPLORE TEMPLATES</Text>
-        {/* Negative margin to break out of scrollContent padding and go full-width */}
         <View style={styles.templateBreakout}>
-          <ScrollView
+          <GHScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.templateCardsRow}
@@ -378,10 +412,7 @@ export default function RoutinesScreen() {
             {INFLUENCER_TEMPLATES.map((t) => (
               <Pressable
                 key={t.id}
-                style={({ pressed }) => [
-                  styles.tCard,
-                  pressed && styles.tCardPressed,
-                ]}
+                style={({ pressed }) => [styles.tCard, pressed && styles.tCardPressed]}
                 onPress={() => openTemplate(t)}
               >
                 <View style={[styles.tCardAvatar, { backgroundColor: accentBg(t.accentKey) }]}>
@@ -393,14 +424,12 @@ export default function RoutinesScreen() {
                 <Text style={styles.tCardAlias} numberOfLines={1}>"{t.alias}"</Text>
                 <Text style={styles.tCardSplit} numberOfLines={2}>{t.splitType}</Text>
                 <View style={styles.tCardFooter}>
-                  <Text style={[styles.tCardExplore, { color: accentColor(t.accentKey) }]}>
-                    Explore
-                  </Text>
+                  <Text style={[styles.tCardExplore, { color: accentColor(t.accentKey) }]}>Explore</Text>
                   <ChevronRight size={12} color={accentColor(t.accentKey)} strokeWidth={2} />
                 </View>
               </Pressable>
             ))}
-          </ScrollView>
+          </GHScrollView>
         </View>
 
         {/* ── My Routines ───────────────────────────────────────── */}
@@ -434,19 +463,25 @@ export default function RoutinesScreen() {
             <Text style={styles.filterEmptyCaption}>Try a different filter or create a new routine.</Text>
           </View>
         ) : (
-          <View style={styles.routineList}>
-            {filtered.map((r) => (
-              <RoutineCard
-                key={r.id}
-                routine={routineToSummary(r)}
-                onPress={() => router.push(`/(modals)/edit-routine?routineId=${r.id}`)}
-                onStart={() => handleStartRoutine(r.id)}
-                onMore={() => setSheetRoutineId(r.id)}
-              />
-            ))}
-          </View>
+          // Drag-to-reorder list. onDragEnd fires with the new order; we
+          // persist it to MMKV. Filtering is only active when a non-All filter
+          // is selected — in that case we disable drag (no drag on filtered views).
+          <NestableDraggableFlatList
+            data={filtered}
+            keyExtractor={(r) => r.id}
+            renderItem={renderRoutineItem}
+            onDragEnd={({ data }) => {
+              // Only persist reorder when showing the full unfiltered list.
+              if (filter === 'All' || filter === 'Full Body') {
+                setOrder(data.map((r) => r.id));
+              }
+            }}
+            // Disable drag when a filter is active to avoid order confusion.
+            activationDistance={filter === 'All' || filter === 'Full Body' ? 5 : 99999}
+            contentContainerStyle={styles.routineList}
+          />
         )}
-      </ScrollView>
+      </NestableScrollContainer>
     </SafeAreaView>
   );
 }
@@ -520,7 +555,8 @@ const styles = StyleSheet.create({
   tCardExplore: { ...(typography.label as TextStyle), fontSize: 11 } satisfies TextStyle,
 
   // My routines section
-  routineList: { gap: spacing.md } satisfies ViewStyle,
+  routineList: { gap: spacing.md, paddingBottom: spacing.md } satisfies ViewStyle,
+  draggableItem: { gap: 0 } satisfies ViewStyle,
   hint: { ...(typography.body as TextStyle), color: colors.ink3 } satisfies TextStyle,
 
   emptyWrap: { alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: spacing.lg } satisfies ViewStyle,

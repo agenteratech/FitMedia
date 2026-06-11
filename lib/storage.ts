@@ -40,6 +40,10 @@ export const storageKeys = {
   exercises: 'exercise_cache_v1',
   workoutCategories: 'workout_categories_cache_v1',
   dailyScore: (userId: string, date: string) => `daily_score_${userId}_${date}`,
+  // Routine custom sort order (not in DB — stored locally, per user)
+  routineOrder: 'routine_order_v1',
+  // Routine default weights (weight not in DB schema — stored locally)
+  routineWeights: 'routine_exercise_weights_v1',
   // AI Companion
   companionTutorialSeen: 'companion_tutorial_seen',
   companionEnabled: 'companion_enabled',

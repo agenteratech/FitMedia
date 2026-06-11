@@ -21,9 +21,11 @@ import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
 import { useDietLogs } from '../../hooks/useDietLogs';
 import { useRoutines } from '../../hooks/useRoutines';
+import { useRoutineOrder } from '../../hooks/useRoutineOrder';
 import { useAuthStore } from '../../stores/authStore';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import { supabase } from '../../lib/supabase';
+import { getJSON, storageKeys } from '../../lib/storage';
 import { primaryMuscleLabel } from '../../lib/workouts/muscles';
 import { Button, Card, Sheet } from '../../src/components/primitives';
 import { CompanionTutorial } from '../../src/components/companion/CompanionTutorial';
@@ -136,7 +138,8 @@ export default function HomeScreen() {
   const { items: workouts }   = useWorkoutHistory();
   const { items: sleepItems } = useSleepLogs();
   const { items: dietLogs }   = useDietLogs();
-  const { items: routines }   = useRoutines();
+  const { items: rawRoutines } = useRoutines();
+  const { orderedItems: routines } = useRoutineOrder(rawRoutines);
 
   // AI Companion
   const companion = useCompanion();
@@ -219,19 +222,21 @@ export default function HomeScreen() {
   const handleStartRoutine = (routineId: string) => {
     const routine = routines.find(r => r.id === routineId);
     if (!routine) return;
+    const weightCache = getJSON<Record<string, number>>(storageKeys.routineWeights) ?? {};
     reset();
     setWorkoutType(routine.name);
     setStartedAt(new Date().toISOString());
     [...routine.user_routine_exercises]
       .sort((a, b) => a.order_index - b.order_index)
       .forEach((rex, idx) => {
+        const defaultWeight = weightCache[`${routineId}_${rex.exercise_id}`] ?? 0;
         upsertExercise({
           exerciseId:    rex.exercise_id,
           name:          rex.exercises?.name ?? 'Exercise',
           primaryMuscle: primaryMuscleLabel(rex.exercises?.primary_muscles),
           orderIndex: idx,
           sets: Array.from({ length: rex.default_sets }, (_, i) => ({
-            setNumber: i + 1, weight: 0, reps: rex.default_reps, completed: false, isPR: false,
+            setNumber: i + 1, weight: defaultWeight, reps: rex.default_reps, completed: false, isPR: false,
           })),
         });
       });
@@ -487,8 +492,10 @@ export default function HomeScreen() {
             <SectionRow label="Today's Nutrition" />
             <Card padding="default">
               <View style={styles.nutritionHeader}>
-                <Text style={[styles.calCount, numericStyle]}>{totalCal.toLocaleString()}</Text>
-                <Text style={styles.calUnit}>kcal</Text>
+                <Text style={[styles.calCount, numericStyle]} numberOfLines={1}>
+                  {Math.round(totalCal).toLocaleString('en-US')}
+                </Text>
+                <Text style={styles.calUnit} numberOfLines={1}>kcal</Text>
               </View>
               <View style={styles.macroRow}>
                 <MacroPill label="P" value={Math.round(totalProtein)} color="#4F7A5A" />
@@ -812,8 +819,8 @@ const styles = StyleSheet.create({
     padding: 3, marginBottom: spacing.md,
   } satisfies ViewStyle,
   sideBtn: {
-    paddingVertical: 6, paddingHorizontal: spacing.lg,
-    borderRadius: 11,
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.lg,
+    borderRadius: radius.buttonCompact - 4,
   } satisfies ViewStyle,
   sideBtnActive: { backgroundColor: colors.ink1 } satisfies ViewStyle,
   sideBtnText: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
@@ -872,9 +879,9 @@ const styles = StyleSheet.create({
   activityTitle: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
   activityMeta:  { ...(typography.caption as TextStyle), color: colors.ink3, marginTop: 2 } satisfies TextStyle,
   scoreEarned: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
     backgroundColor: colors.accentSoft,
-    paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.pill,
   } satisfies ViewStyle,
   scoreEarnedText: { ...(typography.label as TextStyle), color: colors.accent } satisfies TextStyle,
   activityStats: {
@@ -890,10 +897,18 @@ const styles = StyleSheet.create({
 
   // Nutrition
   nutritionHeader: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs, marginBottom: spacing.sm } satisfies ViewStyle,
-  calCount:  { ...(typography.display as TextStyle), fontSize: 28 } satisfies TextStyle,
-  calUnit:   { ...(typography.bodyMedium as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  calCount: {
+    ...(typography.display as TextStyle),
+    fontSize: 28,
+    flexShrink: 0,        // never compress — prevents the number from wrapping
+  } satisfies TextStyle,
+  calUnit: {
+    ...(typography.bodyMedium as TextStyle),
+    color: colors.ink3,
+    flexShrink: 0,
+  } satisfies TextStyle,
   macroRow:  { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm } satisfies ViewStyle,
-  macroPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill } satisfies ViewStyle,
+  macroPill: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill } satisfies ViewStyle,
   macroLabel: { ...(typography.label as TextStyle), fontSize: 11, fontWeight: '700' } satisfies TextStyle,
   macroVal:   { ...(typography.bodyMedium as TextStyle), fontSize: 13 } satisfies TextStyle,
   nutritionMeta: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,

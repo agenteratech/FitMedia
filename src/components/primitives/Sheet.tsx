@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
+import { BackHandler, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -36,12 +36,28 @@ export function Sheet({ visible, onClose, snapPoints, children, scrollable, scro
   const ref = useRef<BottomSheetModal>(null);
   const useDynamic = snapPoints == null;
 
+  // Always keep a stable ref to the latest onClose so the BackHandler
+  // effect doesn't need to re-register every time the parent re-renders.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Present / dismiss in response to the visible prop.
   useEffect(() => {
     if (visible) {
       ref.current?.present();
     } else {
       ref.current?.dismiss();
     }
+  }, [visible]);
+
+  // Android hardware back button — close the sheet instead of navigating.
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onCloseRef.current();
+      return true; // consumed — do not propagate to navigator
+    });
+    return () => sub.remove();
   }, [visible]);
 
   const renderBackdrop = useCallback(

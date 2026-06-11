@@ -63,7 +63,7 @@ export function SetRow({
         }}
       >
         <Trash2 size={18} color={colors.surface} strokeWidth={2} />
-        <Text style={styles.swipeLabel}>Delete</Text>
+        <Text style={styles.swipeLabel} numberOfLines={1}>Delete</Text>
       </Pressable>
     );
   };
@@ -74,7 +74,7 @@ export function SetRow({
       {isDone
         ? <RotateCcw size={18} color={colors.surface} strokeWidth={2} />
         : <Check size={18} color={colors.surface} strokeWidth={2} />}
-      <Text style={styles.swipeLabel}>{isDone ? 'Undo' : 'Done'}</Text>
+      <Text style={styles.swipeLabel} numberOfLines={1}>{isDone ? 'Undo' : 'Done'}</Text>
     </View>
   );
 
@@ -93,9 +93,9 @@ export function SetRow({
       }}
       overshootLeft={false}
       overshootRight={false}
-      friction={2}
-      leftThreshold={60}
-      rightThreshold={60}
+      friction={1.5}
+      leftThreshold={72}
+      rightThreshold={72}
     >
       <View
         style={[
@@ -254,20 +254,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
     borderColor: colors.success,
   } satisfies ViewStyle,
-  // Swipe actions
+  // Swipe actions — 90 px wide gives the label and icon comfortable room
   swipeDelete: {
     backgroundColor: colors.alert,
-    width: 80,
+    width: 90,
     justifyContent: 'center',
     alignItems: 'center',
-    rowGap: 3,
+    gap: spacing.xs,
   } satisfies ViewStyle,
   swipeDone: {
     backgroundColor: colors.success,
-    width: 80,
+    width: 90,
     justifyContent: 'center',
     alignItems: 'center',
-    rowGap: 3,
+    gap: spacing.xs,
   } satisfies ViewStyle,
   swipeUndo: {
     backgroundColor: colors.ink3,
@@ -276,5 +276,6 @@ const styles = StyleSheet.create({
     ...(typography.label as TextStyle),
     color: colors.surface,
     fontSize: 10,
+    textAlign: 'center',
   } satisfies TextStyle,
 });
