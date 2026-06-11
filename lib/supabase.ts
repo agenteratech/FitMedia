@@ -1,4 +1,5 @@
-﻿import { createClient } from '@supabase/supabase-js';
+﻿import { AppState, Platform } from 'react-native';
+import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database';
 import { storage } from './storage';
 
@@ -37,3 +38,23 @@ export const supabase = createClient<Database>(supabaseUrl!, supabaseAnonKey!, {
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * On React Native, supabase-js cannot refresh the access token on its own
+ * timer reliably — it must be told when the app is foregrounded. Without this,
+ * an expired access token is never refreshed, so the stored session is treated
+ * as invalid on the next cold start and the user appears logged out.
+ *
+ * Start refreshing while the app is active; stop when backgrounded.
+ */
+if (Platform.OS !== 'web') {
+  AppState.addEventListener('change', (state) => {
+    if (state === 'active') {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+  // Kick it off immediately for the initial foreground.
+  supabase.auth.startAutoRefresh();
+}
