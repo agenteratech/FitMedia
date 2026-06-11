@@ -5,6 +5,13 @@
     "scheme": "fitnessrpg",
     "version": "1.0.0",
     "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c575169f-e2f5-4808-9178-827e79d09315",
+      "checkAutomatically": "ON_LOAD"
+    },
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -35,6 +42,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-updates",
       [
         "expo-notifications",
         {
