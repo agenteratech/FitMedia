@@ -83,13 +83,29 @@ export default function ProfileScreen() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
+      // maybeSingle() returns null data (no error) when no row exists.
+      // single() would throw PGRST116 for accounts whose users row was
+      // never created by the Supabase trigger, breaking the profile screen.
+      let { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) { setError(error.message); setLoading(false); return; }
+
+      // Row missing — create a minimal record so the screen works immediately.
+      if (!data) {
+        const { data: created, error: insertError } = await supabase
+          .from('users')
+          .upsert({ id: user.id, email: user.email ?? '' }, { onConflict: 'id' })
+          .select()
+          .single();
+        if (insertError) { setError(insertError.message); setLoading(false); return; }
+        data = created;
+      }
+
+      if (!data) { setLoading(false); return; }
 
       setProfile(data);
       const row = data as typeof data & { calorie_target?: number | null };
