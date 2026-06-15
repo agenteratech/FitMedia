@@ -15,30 +15,61 @@ const corsHeaders = {
 };
 
 // ── Muscle group mapping ──────────────────────────────────────────────────────
+// Covers both common shorthand names and full anatomical names so that
+// whatever naming convention is used in the exercises table, we still
+// resolve to one of the six display groups.
 const MUSCLE_TO_GROUP: Record<string, string> = {
+  // ── Chest ────────────────────────────────────────────────────────────────
   chest: 'chest', 'middle chest': 'chest', 'lower chest': 'chest', 'upper chest': 'chest',
-  'pectorals': 'chest', 'pecs': 'chest',
+  pectorals: 'chest', pecs: 'chest',
+  'pectoralis major': 'chest', 'pectoralis minor': 'chest', pectoralis: 'chest',
+  'serratus anterior': 'chest', 'upper pecs': 'chest', 'inner chest': 'chest',
 
+  // ── Back ─────────────────────────────────────────────────────────────────
   lats: 'back', 'middle back': 'back', 'lower back': 'back', traps: 'back',
   rhomboids: 'back', 'upper back': 'back', 'erector spinae': 'back',
   latissimus: 'back', trapezius: 'back',
+  'latissimus dorsi': 'back', 'teres major': 'back', 'teres minor': 'back',
+  'rhomboid major': 'back', 'rhomboid minor': 'back',
+  infraspinatus: 'back', supraspinatus: 'back', 'spinal erectors': 'back',
+  multifidus: 'back', 'rear lats': 'back',
 
+  // ── Shoulders ────────────────────────────────────────────────────────────
   shoulders: 'shoulders', deltoids: 'shoulders', 'front deltoids': 'shoulders',
   'medial deltoids': 'shoulders', 'rear deltoids': 'shoulders',
   'rotator cuff': 'shoulders', 'anterior deltoid': 'shoulders',
   'posterior deltoid': 'shoulders', 'lateral deltoid': 'shoulders',
-  delts: 'shoulders',
+  delts: 'shoulders', deltoid: 'shoulders',
+  'front delt': 'shoulders', 'side delt': 'shoulders', 'rear delt': 'shoulders',
+  'middle deltoid': 'shoulders', 'medial deltoid': 'shoulders',
 
+  // ── Arms ─────────────────────────────────────────────────────────────────
   biceps: 'arms', triceps: 'arms', forearms: 'arms', forearm: 'arms',
   brachialis: 'arms', brachioradialis: 'arms', 'biceps brachii': 'arms',
+  'triceps brachii': 'arms', tricep: 'arms', bicep: 'arms',
+  'long head': 'arms', 'short head': 'arms', 'lateral head': 'arms',
+  'medial head': 'arms', wrist: 'arms', wrists: 'arms',
 
+  // ── Legs ─────────────────────────────────────────────────────────────────
   quadriceps: 'legs', quads: 'legs', hamstrings: 'legs', hamstring: 'legs',
   glutes: 'legs', gluteal: 'legs', gluteus: 'legs', calves: 'legs',
   calf: 'legs', adductors: 'legs', adductor: 'legs', abductors: 'legs',
   'hip flexors': 'legs', 'hip flexor': 'legs',
+  'gluteus maximus': 'legs', 'gluteus medius': 'legs', 'gluteus minimus': 'legs',
+  'rectus femoris': 'legs', 'vastus lateralis': 'legs', 'vastus medialis': 'legs',
+  'vastus intermedius': 'legs', 'biceps femoris': 'legs',
+  semimembranosus: 'legs', semitendinosus: 'legs',
+  gastrocnemius: 'legs', soleus: 'legs', 'tibialis anterior': 'legs',
+  'hip adductor': 'legs', groin: 'legs', 'inner thigh': 'legs',
+  'tensor fasciae latae': 'legs', tfl: 'legs', 'it band': 'legs',
+  thighs: 'legs', quad: 'legs',
 
+  // ── Core ─────────────────────────────────────────────────────────────────
   abdominals: 'core', abs: 'core', obliques: 'core', core: 'core',
   'transverse abdominis': 'core', 'rectus abdominis': 'core',
+  'external oblique': 'core', 'internal oblique': 'core',
+  'transversus abdominis': 'core', 'lower abs': 'core', 'upper abs': 'core',
+  'hip abductors': 'core', plank: 'core',
 };
 
 const ALL_GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core'];
@@ -87,7 +118,29 @@ function weeklyVolumeEfficiency(weeklySets: number): number {
 }
 
 function mapMuscle(muscle: string): string | null {
-  return MUSCLE_TO_GROUP[muscle.toLowerCase().trim()] ?? null;
+  const lower = muscle.toLowerCase().trim();
+  if (MUSCLE_TO_GROUP[lower]) return MUSCLE_TO_GROUP[lower];
+
+  // Keyword fallback — catches long anatomical names not in the lookup table.
+  if (lower.includes('pector') || lower.includes('serratus')) return 'chest';
+  if (lower.includes('latissimus') || lower.includes('rhomboid') ||
+      lower.includes('teres') || lower.includes('infraspinatus') ||
+      lower.includes('supraspinatus') || lower.includes('erector') ||
+      lower.includes('multifidus')) return 'back';
+  if (lower.includes('delt') || lower.includes('shoulder') ||
+      lower.includes('rotator')) return 'shoulders';
+  if (lower.includes('bicep') || lower.includes('tricep') ||
+      lower.includes('brachiali') || lower.includes('brachioradial') ||
+      lower.includes('forearm')) return 'arms';
+  if (lower.includes('quadricep') || lower.includes('hamstring') ||
+      lower.includes('glute') || lower.includes('gastrocnem') ||
+      lower.includes('soleus') || lower.includes('adductor') ||
+      lower.includes('abductor') || lower.includes('femoris') ||
+      lower.includes('tibialis') || lower.includes('hip flex')) return 'legs';
+  if (lower.includes('abdomin') || lower.includes('oblique') ||
+      lower.includes('transvers')) return 'core';
+
+  return null;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -477,14 +530,15 @@ Deno.serve(async (req) => {
     // ── 18. Upsert daily_scores ───────────────────────────────────────────────
     const { error: upsertErr } = await admin.from('daily_scores').upsert(
       {
-        user_id:          userId,
-        date:             today,
-        workout_score:    workoutScore,
-        diet_score:       dietScore,
-        sleep_score:      sleepScore,
-        balance_score:    balanceScore,
-        total_score:      totalScore,
-        body_part_scores: bodyPartScores,
+        user_id:                 userId,
+        date:                    today,
+        workout_score:           workoutScore,
+        diet_score:              dietScore,
+        sleep_score:             sleepScore,
+        balance_score:           balanceScore,
+        total_score:             totalScore,
+        body_part_scores:        bodyPartScores,
+        today_muscle_stimulus:   stimulusMap,
         insights,
       },
       { onConflict: 'user_id,date' },
@@ -496,12 +550,13 @@ Deno.serve(async (req) => {
     }
 
     return jsonResponse({
-      total_score:      totalScore,
-      workout_score:    workoutScore,
-      diet_score:       dietScore,
-      sleep_score:      sleepScore,
-      balance_score:    balanceScore,
-      body_part_scores: bodyPartScores,
+      total_score:             totalScore,
+      workout_score:           workoutScore,
+      diet_score:              dietScore,
+      sleep_score:             sleepScore,
+      balance_score:           balanceScore,
+      body_part_scores:        bodyPartScores,
+      today_muscle_stimulus:   stimulusMap,
       insights,
     });
   } catch (e) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
@@ -13,7 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, ChevronRight, Dumbbell, Flame, Info, Moon, Plus, Trophy, Zap } from 'lucide-react-native';
 import { useDailyScore } from '../../hooks/useDailyScore';
 import { useStreak } from '../../hooks/useStreak';
@@ -113,11 +113,19 @@ function bodyScoreColor(v: number): string {
   return colors.alert;
 }
 
-// Orange heatmap — opacity scales against RING_DISPLAY_MAX so the body
-// map saturates at "elite" level, not at a hard cap of 100.
-function heatColor(score: number): string {
-  const opacity = (0.12 + (Math.min(score, RING_DISPLAY_MAX) / RING_DISPLAY_MAX) * 0.83).toFixed(2);
-  return `rgba(217, 102, 63, ${opacity})`;
+// Daily-stimulus heatmap — red intensity reflects how hard a muscle was trained
+// TODAY, not long-term score. Uses the science-based per-set stimulus value:
+//   Stset = ln(loadRatio × reps × eMod + 1)   (RIR-weighted, load-relative)
+//
+// Reference calibration (solid session ≈ 5–6 work sets near failure = STIM_REF):
+//   ~0.5  → 1 light set            → faint red  (opacity ~0.25)
+//   ~2–4  → 3–4 moderate sets      → medium red  (opacity ~0.50–0.65)
+//   ~6–8  → 5–6 hard/failure sets  → deep red   (opacity ~0.80–0.95)
+const STIM_REF = 8.0;
+
+function stimulusColor(stimulus: number): string {
+  const opacity = (0.20 + (Math.min(stimulus, STIM_REF) / STIM_REF) * 0.75).toFixed(2);
+  return `rgba(210, 40, 40, ${opacity})`;
 }
 
 const QUALITY_LABEL: Record<string, string> = {
@@ -133,8 +141,12 @@ export default function HomeScreen() {
   const { reset, setWorkoutType, setStartedAt, upsertExercise } = useWorkoutStore();
 
   // Data hooks
-  const { score, loading: scoreLoading } = useDailyScore();
+  const { score, loading: scoreLoading, refresh: refreshScore } = useDailyScore();
   const streak = useStreak();
+
+  // Re-fetch score every time this tab comes into focus so the silhouette
+  // reflects any workout just saved (edge function runs async after save).
+  useFocusEffect(useCallback(() => { refreshScore(); }, [refreshScore]));
   const { items: workouts }   = useWorkoutHistory();
   const { items: sleepItems } = useSleepLogs();
   const { items: dietLogs }   = useDietLogs();
@@ -190,15 +202,33 @@ export default function HomeScreen() {
     };
   }, [score]);
 
-  // Body highlighter data — all slugs coloured by their group's score
+  // Today's stimulus per muscle group — drives the silhouette colour.
+  // Only muscles actually trained today get a non-zero value; rest stay gray.
+  const todayStimulus = useMemo<Record<string, number>>(() => {
+    const tms = score?.today_muscle_stimulus ?? {};
+    return {
+      chest:     Number(tms.chest     ?? 0),
+      back:      Number(tms.back      ?? 0),
+      shoulders: Number(tms.shoulders ?? 0),
+      arms:      Number(tms.arms      ?? 0),
+      legs:      Number(tms.legs      ?? 0),
+      core:      Number(tms.core      ?? 0),
+    };
+  }, [score]);
+
+  // Body highlighter data — slugs colour red based on TODAY's training stimulus.
+  // Intensity = how hard that group was hit (sets × load × effort).
+  // Gray = not trained today.
   const bodyData = useMemo<ExtendedBodyPart[]>(() => {
     return Object.entries(GROUP_SLUGS).flatMap(([group, slugs]) =>
       slugs.map(slug => ({
         slug,
-        color: bodyPartScores[group] > 0 ? heatColor(bodyPartScores[group]) : colors.surfaceSunk,
+        color: todayStimulus[group] > 0
+          ? stimulusColor(todayStimulus[group])
+          : colors.surfaceSunk,
       }))
     );
-  }, [bodyPartScores]);
+  }, [todayStimulus]);
 
   // Body highlighter scale to fill card width
   // card width = screen − scroll padding (2×24) − card padding (2×16)
@@ -366,18 +396,18 @@ export default function HomeScreen() {
             />
           </View>
 
-          {/* Heat legend */}
+          {/* Intensity legend */}
           <View style={styles.legendRow}>
-            <Text style={styles.legendLabel}>Low</Text>
+            <Text style={styles.legendLabel}>Light</Text>
             <View style={styles.legendSwatches}>
-              {[0.12, 0.32, 0.54, 0.76, 0.95].map(o => (
+              {[0.20, 0.36, 0.53, 0.70, 0.95].map(o => (
                 <View
                   key={o}
-                  style={[styles.legendSwatch, { backgroundColor: `rgba(217,102,63,${o})` }]}
+                  style={[styles.legendSwatch, { backgroundColor: `rgba(210,40,40,${o})` }]}
                 />
               ))}
             </View>
-            <Text style={styles.legendLabel}>High</Text>
+            <Text style={styles.legendLabel}>Intense</Text>
           </View>
         </Card>
 
