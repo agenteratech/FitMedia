@@ -27,9 +27,9 @@ const createStorage = (): StorageLike => {
     };
     return new MMKV();
   } catch (error) {
-    if (__DEV__) {
-      console.warn('MMKV unavailable; using in-memory fallback storage.', error);
-    }
+    // Always log this — falling back to MemoryStorage means the session is never
+    // written to disk, so the user gets logged out on every cold restart.
+    console.error('[Storage] MMKV failed to initialise; falling back to in-memory storage. Session will NOT persist across app restarts.', error);
     return new MemoryStorage();
   }
 };

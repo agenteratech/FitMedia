@@ -29,6 +29,47 @@ export type AuthState = {
 
 let authSubscription: { unsubscribe: () => void } | null = null;
 
+/** Shared onAuthStateChange handler — used by both init() and ensureAuthListener(). */
+function createAuthHandler(
+  set: (partial: Partial<AuthState>) => void,
+) {
+  return async (event: string, session: import('@supabase/supabase-js').Session | null) => {
+    try {
+      if (event === 'SIGNED_OUT') {
+        set({ session: null, user: null, onboardingComplete: null, error: null, passwordRecovery: false });
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        set({ session, user: session?.user ?? null, passwordRecovery: true, error: null });
+        return;
+      }
+      if (event === 'SIGNED_IN') {
+        const user = session?.user ?? null;
+        const onboardingComplete = user ? await fetchOnboardingStatus(user.id) : null;
+        set({ session, user, onboardingComplete, error: null });
+        return;
+      }
+      // TOKEN_REFRESHED, INITIAL_SESSION, etc. just sync session.
+      set({ session, user: session?.user ?? null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh auth state.';
+      set({
+        session,
+        user: session?.user ?? null,
+        onboardingComplete: false,
+        error: message,
+      });
+    }
+  };
+}
+
+/** Registers the onAuthStateChange listener if it isn't already active. */
+function ensureAuthListener(set: (partial: Partial<AuthState>) => void) {
+  if (authSubscription) return;
+  const { data: authData } = supabase.auth.onAuthStateChange(createAuthHandler(set) as any);
+  authSubscription = authData.subscription;
+}
+
 async function fetchOnboardingStatus(userId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('users')
@@ -76,39 +117,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         initialized: true,
       });
 
-      if (!authSubscription) {
-        const { data: authData } = supabase.auth.onAuthStateChange(async (event, session) => {
-          try {
-            if (event === 'SIGNED_OUT') {
-              set({ session: null, user: null, onboardingComplete: null, error: null, passwordRecovery: false });
-              return;
-            }
-            if (event === 'PASSWORD_RECOVERY') {
-              // User opened a reset link — they now have a temporary session
-              // and must set a new password before using the app.
-              set({ session, user: session?.user ?? null, passwordRecovery: true, error: null });
-              return;
-            }
-            if (event === 'SIGNED_IN') {
-              const user = session?.user ?? null;
-              const onboardingComplete = user ? await fetchOnboardingStatus(user.id) : null;
-              set({ session, user, onboardingComplete, error: null });
-              return;
-            }
-            // TOKEN_REFRESHED, INITIAL_SESSION, etc. just sync session.
-            set({ session, user: session?.user ?? null });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to refresh auth state.';
-            set({
-              session,
-              user: session?.user ?? null,
-              onboardingComplete: false,
-              error: message,
-            });
-          }
-        });
-        authSubscription = authData.subscription;
-      }
+      ensureAuthListener(set);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to initialize auth.';
       set({
@@ -121,12 +130,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signIn: async (email, password) => {
     set({ loading: true, error: null });
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       set({ error: error.message, loading: false });
       return;
     }
-    set({ loading: false });
+
+    // Update store directly from the response — do not rely solely on
+    // onAuthStateChange, which may not be subscribed if the user previously
+    // signed out within the same JS session without a cold restart.
+    const session = data.session;
+    const user = data.user;
+    if (session && user) {
+      try {
+        const onboardingComplete = await fetchOnboardingStatus(user.id);
+        set({ session, user, onboardingComplete, error: null, loading: false });
+      } catch {
+        set({ session, user, onboardingComplete: false, loading: false });
+      }
+    } else {
+      set({ loading: false });
+    }
+
+    // Re-register the auth listener if signOut() removed it earlier this session.
+    ensureAuthListener(set);
   },
 
   signUp: async (email, password) => {
