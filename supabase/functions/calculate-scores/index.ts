@@ -333,9 +333,12 @@ Deno.serve(async (req) => {
       };
     }
 
-    // ── 11. Initialize from onboarding strength test (first run only) ──────────
-    const hasAnyStats = currentStats && currentStats.length > 0;
-    if (!hasAnyStats) {
+    // ── 11. Initialize from strength test when all stats are still at zero ───────
+    // Runs on first-ever call AND after a user explicitly recalibrates their
+    // baseline (profile flow deletes muscle_stats rows before calling this).
+    const allStatsAreZero = !currentStats || currentStats.length === 0 ||
+      currentStats.every(s => Number(s.current_stat) === 0 && Number(s.all_time_max) === 0);
+    if (allStatsAreZero) {
       const { data: initStr } = await admin
         .from('initial_strength')
         .select('push_weight_kg, push_reps, pull_weight_kg, pull_reps, legs_weight_kg, legs_reps')

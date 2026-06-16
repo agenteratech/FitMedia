@@ -14,12 +14,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Sparkles, LogOut } from 'lucide-react-native';
+import { ChevronRight, Dumbbell, Sparkles, LogOut } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { recalculateScores } from '../../lib/scoreEngine';
 import { useAuthStore } from '../../stores/authStore';
-import { Input, Button, Chip, Card } from '../../src/components/primitives';
+import { Input, Button, Chip, Card, Sheet } from '../../src/components/primitives';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import type { Database } from '../../types/database';
+
+const BW_FRACTIONS = { push: 0.65, pull: 1.0, legs: 0.65 };
+type StrengthOption = 'weighted' | 'bodyweight';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
 
@@ -83,6 +87,97 @@ export default function ProfileScreen() {
     diet:     'somewhat',
     calories: '',
   });
+
+  // ── Strength baseline sheet state ──────────────────────────────────────
+  const [showBaselineSheet, setShowBaselineSheet] = useState(false);
+  const [bwPushType,   setBwPushType]   = useState<StrengthOption>('weighted');
+  const [bwPushWeight, setBwPushWeight] = useState('');
+  const [bwPushReps,   setBwPushReps]   = useState('');
+  const [bwPullType,   setBwPullType]   = useState<StrengthOption>('weighted');
+  const [bwPullWeight, setBwPullWeight] = useState('');
+  const [bwPullReps,   setBwPullReps]   = useState('');
+  const [bwLegsType,   setBwLegsType]   = useState<StrengthOption>('weighted');
+  const [bwLegsWeight, setBwLegsWeight] = useState('');
+  const [bwLegsReps,   setBwLegsReps]   = useState('');
+  const [baselineSaving, setBaselineSaving] = useState(false);
+  const [baselineError,  setBaselineError]  = useState<string | null>(null);
+  const [baselineSaved,  setBaselineSaved]  = useState(false);
+
+  // Pre-fill sheet with existing baseline data when it opens.
+  const openBaselineSheet = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('initial_strength')
+      .select('push_exercise, push_weight_kg, push_reps, pull_exercise, pull_weight_kg, pull_reps, legs_exercise, legs_weight_kg, legs_reps')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (data) {
+      const isPushBW = data.push_exercise === 'Push-ups';
+      setBwPushType(isPushBW ? 'bodyweight' : 'weighted');
+      setBwPushWeight(isPushBW ? '' : String(data.push_weight_kg ?? ''));
+      setBwPushReps(String(data.push_reps ?? ''));
+
+      const isPullBW = data.pull_exercise === 'Pull-ups';
+      setBwPullType(isPullBW ? 'bodyweight' : 'weighted');
+      setBwPullWeight(isPullBW ? '' : String(data.pull_weight_kg ?? ''));
+      setBwPullReps(String(data.pull_reps ?? ''));
+
+      const isLegsBW = data.legs_exercise === 'Bodyweight Squats';
+      setBwLegsType(isLegsBW ? 'bodyweight' : 'weighted');
+      setBwLegsWeight(isLegsBW ? '' : String(data.legs_weight_kg ?? ''));
+      setBwLegsReps(String(data.legs_reps ?? ''));
+    }
+    setBaselineError(null);
+    setBaselineSaved(false);
+    setShowBaselineSheet(true);
+  };
+
+  const handleSaveBaseline = async () => {
+    if (!user) return;
+    setBaselineSaving(true);
+    setBaselineError(null);
+
+    const bwKg = form.weight ? Number(form.weight) : 70;
+    const effectivePushWeight = bwPushType === 'weighted'
+      ? (Number(bwPushWeight) || null)
+      : (bwPushReps ? bwKg * BW_FRACTIONS.push : null);
+    const effectivePullWeight = bwPullType === 'weighted'
+      ? (Number(bwPullWeight) || null)
+      : (bwPullReps ? bwKg * BW_FRACTIONS.pull : null);
+    const effectiveLegsWeight = bwLegsType === 'weighted'
+      ? (Number(bwLegsWeight) || null)
+      : (bwLegsReps ? bwKg * BW_FRACTIONS.legs : null);
+
+    const { error: upsertErr } = await supabase
+      .from('initial_strength')
+      .upsert(
+        {
+          user_id:        user.id,
+          push_exercise:  bwPushType === 'weighted' ? 'Bench Press'    : 'Push-ups',
+          push_weight_kg: effectivePushWeight,
+          push_reps:      Number(bwPushReps)  || null,
+          pull_exercise:  bwPullType === 'weighted' ? 'Lat Pulldown'   : 'Pull-ups',
+          pull_weight_kg: effectivePullWeight,
+          pull_reps:      Number(bwPullReps)  || null,
+          legs_exercise:  bwLegsType === 'weighted' ? 'Barbell Squat'  : 'Bodyweight Squats',
+          legs_weight_kg: effectiveLegsWeight,
+          legs_reps:      Number(bwLegsReps)  || null,
+        } as any,
+        { onConflict: 'user_id' } as any,
+      );
+
+    if (upsertErr) { setBaselineError(upsertErr.message); setBaselineSaving(false); return; }
+
+    // Reset muscle stats to zero so the edge function re-initializes from
+    // the new baseline data on the next recalculation.
+    await supabase.from('muscle_stats').delete().eq('user_id', user.id);
+
+    recalculateScores().catch(console.error);
+
+    setBaselineSaving(false);
+    setBaselineSaved(true);
+    setTimeout(() => { setShowBaselineSheet(false); setBaselineSaved(false); }, 1200);
+  };
 
   useEffect(() => {
     return () => {
@@ -349,6 +444,23 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {/* Strength Baseline */}
+        <Pressable
+          style={({ pressed }) => [styles.baselineCard, pressed && { opacity: 0.75 }]}
+          onPress={openBaselineSheet}
+        >
+          <View style={styles.baselineIcon}>
+            <Dumbbell size={18} color={colors.accent} strokeWidth={1.75} />
+          </View>
+          <View style={styles.baselineText}>
+            <Text style={styles.baselineLabel}>Strength Baseline</Text>
+            <Text style={styles.baselineCaption}>
+              Set or update your starting push / pull / legs strength
+            </Text>
+          </View>
+          <ChevronRight size={16} color={colors.ink4} strokeWidth={1.75} />
+        </Pressable>
+
         <Button
           label={saving ? 'Saving…' : 'Save Changes'}
           fullWidth
@@ -365,6 +477,73 @@ export default function ProfileScreen() {
           <Text style={styles.logoutLabel}>Log Out</Text>
         </Pressable>
       </ScrollView>
+
+      {/* ── Strength Baseline Sheet ────────────────────────────────────────── */}
+      <Sheet visible={showBaselineSheet} onClose={() => setShowBaselineSheet(false)}>
+        <View style={bStyles.container}>
+          <Text style={bStyles.title}>Strength Baseline</Text>
+          <Text style={bStyles.subtitle}>
+            Log a comfortable set — not a max effort. We use this to set your starting body stats.
+          </Text>
+
+          {/* Push */}
+          <Text style={bStyles.groupTitle}>Push  ·  Chest · Shoulders · Triceps</Text>
+          <View style={bStyles.chipRow}>
+            <Chip label="Bench Press" selected={bwPushType === 'weighted'}    onPress={() => setBwPushType('weighted')}    />
+            <Chip label="Push-ups"    selected={bwPushType === 'bodyweight'}  onPress={() => setBwPushType('bodyweight')}  />
+          </View>
+          {bwPushType === 'weighted' ? (
+            <View style={bStyles.inputRow}>
+              <Input label="Weight (kg)" value={bwPushWeight} onChangeText={setBwPushWeight} keyboardType="decimal-pad" style={bStyles.half} />
+              <Input label="Reps"        value={bwPushReps}   onChangeText={setBwPushReps}   keyboardType="number-pad"  style={bStyles.half} />
+            </View>
+          ) : (
+            <Input label="Reps" value={bwPushReps} onChangeText={setBwPushReps} keyboardType="number-pad" />
+          )}
+
+          {/* Pull */}
+          <Text style={bStyles.groupTitle}>Pull  ·  Back · Biceps</Text>
+          <View style={bStyles.chipRow}>
+            <Chip label="Lat Pulldown" selected={bwPullType === 'weighted'}   onPress={() => setBwPullType('weighted')}   />
+            <Chip label="Pull-ups"     selected={bwPullType === 'bodyweight'} onPress={() => setBwPullType('bodyweight')} />
+          </View>
+          {bwPullType === 'weighted' ? (
+            <View style={bStyles.inputRow}>
+              <Input label="Weight (kg)" value={bwPullWeight} onChangeText={setBwPullWeight} keyboardType="decimal-pad" style={bStyles.half} />
+              <Input label="Reps"        value={bwPullReps}   onChangeText={setBwPullReps}   keyboardType="number-pad"  style={bStyles.half} />
+            </View>
+          ) : (
+            <Input label="Reps" value={bwPullReps} onChangeText={setBwPullReps} keyboardType="number-pad" />
+          )}
+
+          {/* Legs */}
+          <Text style={bStyles.groupTitle}>Legs  ·  Quads · Hamstrings · Glutes</Text>
+          <View style={bStyles.chipRow}>
+            <Chip label="Barbell Squat"      selected={bwLegsType === 'weighted'}   onPress={() => setBwLegsType('weighted')}   />
+            <Chip label="Bodyweight Squats"  selected={bwLegsType === 'bodyweight'} onPress={() => setBwLegsType('bodyweight')} />
+          </View>
+          {bwLegsType === 'weighted' ? (
+            <View style={bStyles.inputRow}>
+              <Input label="Weight (kg)" value={bwLegsWeight} onChangeText={setBwLegsWeight} keyboardType="decimal-pad" style={bStyles.half} />
+              <Input label="Reps"        value={bwLegsReps}   onChangeText={setBwLegsReps}   keyboardType="number-pad"  style={bStyles.half} />
+            </View>
+          ) : (
+            <Input label="Reps" value={bwLegsReps} onChangeText={setBwLegsReps} keyboardType="number-pad" />
+          )}
+
+          {baselineError  ? <Text style={bStyles.error}>{baselineError}</Text>  : null}
+          {baselineSaved  ? <Text style={bStyles.saved}>Baseline saved! Recalculating your stats…</Text> : null}
+
+          <Button
+            label={baselineSaving ? 'Saving…' : 'Save Baseline'}
+            fullWidth
+            disabled={baselineSaving}
+            onPress={handleSaveBaseline}
+            style={{ marginTop: spacing.sm }}
+          />
+        </View>
+      </Sheet>
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -473,4 +652,68 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   } satisfies ViewStyle,
+  baselineCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.surfaceElevBorder,
+    padding: spacing.lg,
+  } satisfies ViewStyle,
+  baselineIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.input,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  } satisfies ViewStyle,
+  baselineText: { flex: 1 } satisfies ViewStyle,
+  baselineLabel: { ...(typography.bodyMedium as TextStyle) } satisfies TextStyle,
+  baselineCaption: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+    marginTop: 2,
+  } satisfies TextStyle,
+});
+
+const bStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: spacing['2xl'],
+    paddingBottom: spacing['3xl'],
+    gap: spacing.md,
+  } satisfies ViewStyle,
+  title: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
+  subtitle: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+  } satisfies TextStyle,
+  groupTitle: {
+    ...(typography.label as TextStyle),
+    color: colors.ink2,
+    marginTop: spacing.sm,
+  } satisfies TextStyle,
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  } satisfies ViewStyle,
+  inputRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  } satisfies ViewStyle,
+  half: { flex: 1 } satisfies ViewStyle,
+  error: {
+    ...(typography.caption as TextStyle),
+    color: colors.alert,
+    textAlign: 'center',
+  } satisfies TextStyle,
+  saved: {
+    ...(typography.caption as TextStyle),
+    color: colors.success,
+    textAlign: 'center',
+  } satisfies TextStyle,
 });

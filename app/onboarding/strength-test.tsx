@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ScrollView,
   View,
@@ -13,8 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase';
+import { recalculateScores } from '../../lib/scoreEngine';
 import { Input, Button, Card, Chip } from '../../src/components/primitives';
 import { colors, spacing, typography } from '../../src/theme';
+
+// Fraction of bodyweight actually lifted for each bodyweight movement.
+// Push-ups: ~65% BW | Pull-ups: 100% BW | Bodyweight squats: ~65% BW
+const BW_FRACTIONS = { push: 0.65, pull: 1.0, legs: 0.65 };
 
 type StrengthOption = 'weighted' | 'bodyweight';
 
@@ -92,51 +97,81 @@ export default function StrengthTestScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
 
+  const [bodyWeightKg, setBodyWeightKg] = useState(70);
+
   const [pushType, setPushType] = useState<StrengthOption>('weighted');
   const [pushWeight, setPushWeight] = useState('');
-  const [pushReps, setPushReps] = useState('');
+  const [pushReps, setPushReps]  = useState('');
 
   const [pullType, setPullType] = useState<StrengthOption>('weighted');
   const [pullWeight, setPullWeight] = useState('');
-  const [pullReps, setPullReps] = useState('');
+  const [pullReps, setPullReps]  = useState('');
 
   const [legsType, setLegsType] = useState<StrengthOption>('weighted');
   const [legsWeight, setLegsWeight] = useState('');
-  const [legsReps, setLegsReps] = useState('');
+  const [legsReps, setLegsReps]  = useState('');
 
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]   = useState<string | null>(null);
+
+  // Fetch the user's body weight so we can convert bodyweight reps to kg.
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('users')
+      .select('weight_kg')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.weight_kg) setBodyWeightKg(Number(data.weight_kg));
+      });
+  }, [user]);
 
   const handleContinue = async () => {
-    if (!user) {
-      setError('Please sign in to continue.');
-      return;
-    }
+    if (!user) { setError('Please sign in to continue.'); return; }
     setError(null);
     setSaving(true);
 
-    const pushExercise = pushType === 'weighted' ? 'Bench Press' : 'Push-ups';
-    const pullExercise = pullType === 'weighted' ? 'Lat Pulldown' : 'Pull-ups';
-    const legsExercise = legsType === 'weighted' ? 'Barbell Squat' : 'Bodyweight Squats';
+    // For bodyweight movements, store the effective load = BW × fraction.
+    // The edge function uses this as the "weight_kg" input to the Sstart formula.
+    const effectivePushWeight = pushType === 'weighted'
+      ? (Number(pushWeight) || null)
+      : (pushReps ? bodyWeightKg * BW_FRACTIONS.push : null);
 
-    const { error: insertError } = await supabase.from('initial_strength').insert({
-      user_id: user.id,
-      push_exercise: pushExercise,
-      push_weight_kg: pushType === 'weighted' ? Number(pushWeight || 0) : null,
-      push_reps: Number(pushReps || 0) || null,
-      pull_exercise: pullExercise,
-      pull_weight_kg: pullType === 'weighted' ? Number(pullWeight || 0) : null,
-      pull_reps: Number(pullReps || 0) || null,
-      legs_exercise: legsExercise,
-      legs_weight_kg: legsType === 'weighted' ? Number(legsWeight || 0) : null,
-      legs_reps: Number(legsReps || 0) || null,
-    });
+    const effectivePullWeight = pullType === 'weighted'
+      ? (Number(pullWeight) || null)
+      : (pullReps ? bodyWeightKg * BW_FRACTIONS.pull : null);
 
-    if (insertError) {
-      setError(insertError.message);
+    const effectiveLegsWeight = legsType === 'weighted'
+      ? (Number(legsWeight) || null)
+      : (legsReps ? bodyWeightKg * BW_FRACTIONS.legs : null);
+
+    const { error: upsertError } = await supabase
+      .from('initial_strength')
+      .upsert(
+        {
+          user_id:        user.id,
+          push_exercise:  pushType  === 'weighted' ? 'Bench Press'       : 'Push-ups',
+          push_weight_kg: effectivePushWeight,
+          push_reps:      Number(pushReps)  || null,
+          pull_exercise:  pullType  === 'weighted' ? 'Lat Pulldown'      : 'Pull-ups',
+          pull_weight_kg: effectivePullWeight,
+          pull_reps:      Number(pullReps)  || null,
+          legs_exercise:  legsType  === 'weighted' ? 'Barbell Squat'     : 'Bodyweight Squats',
+          legs_weight_kg: effectiveLegsWeight,
+          legs_reps:      Number(legsReps)  || null,
+        } as any,
+        { onConflict: 'user_id' } as any,
+      );
+
+    if (upsertError) {
+      setError(upsertError.message);
       setSaving(false);
       return;
     }
+
+    // Seed muscle_stats immediately so the home screen shows real values.
+    recalculateScores().catch(console.error);
 
     setSaving(false);
     router.push('/onboarding/goal-lifestyle');
@@ -148,65 +183,73 @@ export default function StrengthTestScreen() {
         style={styles.kav}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>Let's estimate your strength</Text>
-        <Text style={styles.subtitle}>
-          Pick one option per category. Don't worry — this is just a starting point.
-        </Text>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.title}>Let's estimate your strength</Text>
+          <Text style={styles.subtitle}>
+            Do a comfortable set — not a max effort. This sets your starting stats.
+            You can skip any section you don't train.
+          </Text>
 
-        <StrengthSection
-          title="Push Strength"
-          subtitle="Target: Chest, shoulders, triceps"
-          weightedLabel="Bench Press"
-          bodyweightLabel="Push-ups"
-          selected={pushType}
-          onSelect={setPushType}
-          weightValue={pushWeight}
-          repsValue={pushReps}
-          onWeightChange={setPushWeight}
-          onRepsChange={setPushReps}
-        />
+          <StrengthSection
+            title="Push Strength"
+            subtitle="Chest · Shoulders · Triceps"
+            weightedLabel="Bench Press"
+            bodyweightLabel="Push-ups"
+            selected={pushType}
+            onSelect={setPushType}
+            weightValue={pushWeight}
+            repsValue={pushReps}
+            onWeightChange={setPushWeight}
+            onRepsChange={setPushReps}
+          />
 
-        <StrengthSection
-          title="Pull Strength"
-          subtitle="Target: Back, biceps"
-          weightedLabel="Lat Pulldown"
-          bodyweightLabel="Pull-ups"
-          selected={pullType}
-          onSelect={setPullType}
-          weightValue={pullWeight}
-          repsValue={pullReps}
-          onWeightChange={setPullWeight}
-          onRepsChange={setPullReps}
-        />
+          <StrengthSection
+            title="Pull Strength"
+            subtitle="Back · Biceps"
+            weightedLabel="Lat Pulldown"
+            bodyweightLabel="Pull-ups"
+            selected={pullType}
+            onSelect={setPullType}
+            weightValue={pullWeight}
+            repsValue={pullReps}
+            onWeightChange={setPullWeight}
+            onRepsChange={setPullReps}
+          />
 
-        <StrengthSection
-          title="Leg Strength"
-          subtitle="Target: Quads, hamstrings, glutes"
-          weightedLabel="Barbell Squat"
-          bodyweightLabel="Bodyweight Squats"
-          selected={legsType}
-          onSelect={setLegsType}
-          weightValue={legsWeight}
-          repsValue={legsReps}
-          onWeightChange={setLegsWeight}
-          onRepsChange={setLegsReps}
-        />
+          <StrengthSection
+            title="Leg Strength"
+            subtitle="Quads · Hamstrings · Glutes"
+            weightedLabel="Barbell Squat"
+            bodyweightLabel="Bodyweight Squats"
+            selected={legsType}
+            onSelect={setLegsType}
+            weightValue={legsWeight}
+            repsValue={legsReps}
+            onWeightChange={setLegsWeight}
+            onRepsChange={setLegsReps}
+          />
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Button
-          label={saving ? 'Saving…' : 'Continue'}
-          fullWidth
-          disabled={saving}
-          onPress={handleContinue}
-        />
-      </ScrollView>
+          <Button
+            label={saving ? 'Saving…' : 'Continue'}
+            fullWidth
+            disabled={saving}
+            onPress={handleContinue}
+          />
+
+          <Button
+            label="Skip for now"
+            variant="ghost"
+            fullWidth
+            onPress={() => router.push('/onboarding/goal-lifestyle')}
+          />
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -214,7 +257,7 @@ export default function StrengthTestScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg } satisfies ViewStyle,
-  kav: { flex: 1 } satisfies ViewStyle,
+  kav:  { flex: 1 } satisfies ViewStyle,
   scroll: { flex: 1 } satisfies ViewStyle,
   content: {
     paddingHorizontal: spacing['2xl'],
