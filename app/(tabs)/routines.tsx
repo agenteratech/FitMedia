@@ -9,9 +9,7 @@ import {
   type TextStyle,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import {
-  NestableScrollContainer,
-  NestableDraggableFlatList,
+import DraggableFlatList, {
   ScaleDecorator,
   type RenderItemParams,
 } from 'react-native-draggable-flatlist';
@@ -393,95 +391,96 @@ export default function RoutinesScreen() {
         )}
       </Sheet>
 
-      {/* ── Main scrollable content ─────────────────────────────── */}
-      {/* NestableScrollContainer lets NestableDraggableFlatList handle  */}
-      {/* drag gestures without conflicting with the outer scroll.       */}
-      <NestableScrollContainer
+      {/* ── A single DraggableFlatList owns all vertical scrolling. ─── */}
+      {/* Using NestableScrollContainer + NestableDraggableFlatList     */}
+      {/* caused the outer and inner scroll containers to fight over     */}
+      {/* gestures, making both scroll and drag feel glitchy. With one  */}
+      {/* DraggableFlatList the gesture system has no ambiguity.        */}
+      <DraggableFlatList
+        data={filtered}
+        keyExtractor={(r) => r.id}
+        renderItem={renderRoutineItem}
+        onDragEnd={({ data }) => {
+          if (filter === 'All' || filter === 'Full Body') {
+            setOrder(data.map((r) => r.id));
+          }
+        }}
+        // Drag via the grip handle uses onLongPress, so activationDistance
+        // only needs to cover noise after the long-press fires. 20 px is
+        // enough to feel intentional without slowing down the drag start.
+        // Disable drag entirely when a filter is active (order would be confusing).
+        activationDistance={filter === 'All' || filter === 'Full Body' ? 20 : 99999}
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
-      >
-        {/* ── Explore Templates ─────────────────────────────────── */}
-        <Text style={styles.sectionLabel}>EXPLORE TEMPLATES</Text>
-        <View style={styles.templateBreakout}>
-          <GHScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.templateCardsRow}
-          >
-            {INFLUENCER_TEMPLATES.map((t) => (
-              <Pressable
-                key={t.id}
-                style={({ pressed }) => [styles.tCard, pressed && styles.tCardPressed]}
-                onPress={() => openTemplate(t)}
+        ListHeaderComponent={
+          <>
+            {/* ── Explore Templates ─────────────────────────────── */}
+            <Text style={styles.sectionLabel}>EXPLORE TEMPLATES</Text>
+            <View style={styles.templateBreakout}>
+              <GHScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.templateCardsRow}
               >
-                <View style={[styles.tCardAvatar, { backgroundColor: accentBg(t.accentKey) }]}>
-                  <Text style={[styles.tCardAvatarText, { color: accentColor(t.accentKey) }]}>
-                    {t.name.split(' ').map((w) => w[0]).join('').slice(0, 2)}
-                  </Text>
-                </View>
-                <Text style={styles.tCardName} numberOfLines={1}>{t.name}</Text>
-                <Text style={styles.tCardAlias} numberOfLines={1}>"{t.alias}"</Text>
-                <Text style={styles.tCardSplit} numberOfLines={2}>{t.splitType}</Text>
-                <View style={styles.tCardFooter}>
-                  <Text style={[styles.tCardExplore, { color: accentColor(t.accentKey) }]}>Explore</Text>
-                  <ChevronRight size={12} color={accentColor(t.accentKey)} strokeWidth={2} />
-                </View>
-              </Pressable>
-            ))}
-          </GHScrollView>
-        </View>
-
-        {/* ── My Routines ───────────────────────────────────────── */}
-        <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>
-          {filter === 'All'
-            ? `MY ROUTINES${items.length > 0 ? ` (${items.length})` : ''}`
-            : `${filter.toUpperCase()}${filtered.length > 0 ? ` (${filtered.length})` : ''}`}
-        </Text>
-
-        {loading ? (
-          <Text style={styles.hint}>Loading routines…</Text>
-        ) : items.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <View style={styles.emptyIcon}>
-              <Dumbbell size={28} color={colors.ink4} strokeWidth={1.5} />
+                {INFLUENCER_TEMPLATES.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    style={({ pressed }) => [styles.tCard, pressed && styles.tCardPressed]}
+                    onPress={() => openTemplate(t)}
+                  >
+                    <View style={[styles.tCardAvatar, { backgroundColor: accentBg(t.accentKey) }]}>
+                      <Text style={[styles.tCardAvatarText, { color: accentColor(t.accentKey) }]}>
+                        {t.name.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+                      </Text>
+                    </View>
+                    <Text style={styles.tCardName} numberOfLines={1}>{t.name}</Text>
+                    <Text style={styles.tCardAlias} numberOfLines={1}>"{t.alias}"</Text>
+                    <Text style={styles.tCardSplit} numberOfLines={2}>{t.splitType}</Text>
+                    <View style={styles.tCardFooter}>
+                      <Text style={[styles.tCardExplore, { color: accentColor(t.accentKey) }]}>Explore</Text>
+                      <ChevronRight size={12} color={accentColor(t.accentKey)} strokeWidth={2} />
+                    </View>
+                  </Pressable>
+                ))}
+              </GHScrollView>
             </View>
-            <Text style={styles.emptyTitle}>No routines yet</Text>
-            <Text style={styles.emptyCaption}>
-              Create your first routine or add one from the templates above.
+
+            {/* ── My Routines section header ─────────────────────── */}
+            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>
+              {filter === 'All'
+                ? `MY ROUTINES${items.length > 0 ? ` (${items.length})` : ''}`
+                : `${filter.toUpperCase()}${filtered.length > 0 ? ` (${filtered.length})` : ''}`}
             </Text>
-            <Button
-              label="Create Routine"
-              fullWidth
-              onPress={() => router.push('/(modals)/create-routine')}
-              style={{ marginTop: spacing.lg }}
-            />
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.filterEmptyWrap}>
-            <Text style={styles.filterEmptyTitle}>No {filter} routines</Text>
-            <Text style={styles.filterEmptyCaption}>Try a different filter or create a new routine.</Text>
-          </View>
-        ) : (
-          // Drag-to-reorder list. onDragEnd fires with the new order; we
-          // persist it to MMKV. Filtering is only active when a non-All filter
-          // is selected — in that case we disable drag (no drag on filtered views).
-          <NestableDraggableFlatList
-            data={filtered}
-            keyExtractor={(r) => r.id}
-            renderItem={renderRoutineItem}
-            onDragEnd={({ data }) => {
-              // Only persist reorder when showing the full unfiltered list.
-              if (filter === 'All' || filter === 'Full Body') {
-                setOrder(data.map((r) => r.id));
-              }
-            }}
-            // Disable drag when a filter is active to avoid order confusion.
-            activationDistance={filter === 'All' || filter === 'Full Body' ? 5 : 99999}
-            contentContainerStyle={styles.routineList}
-          />
-        )}
-      </NestableScrollContainer>
+          </>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <Text style={styles.hint}>Loading routines…</Text>
+          ) : items.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIcon}>
+                <Dumbbell size={28} color={colors.ink4} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyTitle}>No routines yet</Text>
+              <Text style={styles.emptyCaption}>
+                Create your first routine or add one from the templates above.
+              </Text>
+              <Button
+                label="Create Routine"
+                fullWidth
+                onPress={() => router.push('/(modals)/create-routine')}
+                style={{ marginTop: spacing.lg }}
+              />
+            </View>
+          ) : (
+            <View style={styles.filterEmptyWrap}>
+              <Text style={styles.filterEmptyTitle}>No {filter} routines</Text>
+              <Text style={styles.filterEmptyCaption}>Try a different filter or create a new routine.</Text>
+            </View>
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -556,7 +555,7 @@ const styles = StyleSheet.create({
 
   // My routines section
   routineList: { gap: spacing.md, paddingBottom: spacing.md } satisfies ViewStyle,
-  draggableItem: { gap: 0 } satisfies ViewStyle,
+  draggableItem: { marginBottom: spacing.md } satisfies ViewStyle,
   hint: { ...(typography.body as TextStyle), color: colors.ink3 } satisfies TextStyle,
 
   emptyWrap: { alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: spacing.lg } satisfies ViewStyle,
