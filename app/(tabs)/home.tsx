@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { AlertCircle, CheckCircle, ChevronRight, Dumbbell, Flame, Info, Moon, Plus, Trophy, Zap } from 'lucide-react-native';
 import { useDailyScore } from '../../hooks/useDailyScore';
 import { useStreak } from '../../hooks/useStreak';
+import { useLeaderboard, type LeaderboardEntry } from '../../hooks/useLeaderboard';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
 import { useDietLogs } from '../../hooks/useDietLogs';
@@ -157,6 +159,10 @@ export default function HomeScreen() {
   const companion = useCompanion();
   const [showCompanionSheet, setShowCompanionSheet] = useState(false);
 
+  // Leaderboard
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const { entries: lbEntries, currentUser: lbCurrentUser, loading: lbLoading, error: lbError } = useLeaderboard(50);
+
   // Log Workout sheet
   const [showWorkoutSheet, setShowWorkoutSheet] = useState(false);
 
@@ -289,9 +295,18 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.dateText}>{fmtDate(new Date())}</Text>
             </View>
-            {companion.enabled && (
-              <CompanionAvatarButton onPress={() => setShowCompanionSheet(true)} />
-            )}
+            <View style={styles.greetingActions}>
+              <Pressable
+                style={({ pressed }) => [styles.trophyBtn, pressed && { opacity: 0.6 }]}
+                onPress={() => setShowLeaderboard(true)}
+                accessibilityLabel="Open leaderboard"
+              >
+                <Trophy size={22} color={colors.ink2} strokeWidth={1.75} />
+              </Pressable>
+              {companion.enabled && (
+                <CompanionAvatarButton onPress={() => setShowCompanionSheet(true)} />
+              )}
+            </View>
           </View>
         </View>
 
@@ -605,6 +620,37 @@ export default function HomeScreen() {
         onOpenSettings={() => router.push('/(modals)/companion-settings')}
       />
 
+      {/* ── Leaderboard sheet ─────────────────────────── */}
+      <Sheet visible={showLeaderboard} onClose={() => setShowLeaderboard(false)} snapPoints={['80%']}>
+        <View style={styles.lbSheetHead}>
+          <Trophy size={18} color={colors.accent} strokeWidth={1.75} />
+          <Text style={styles.lbSheetTitle}>Leaderboard</Text>
+        </View>
+        <Text style={styles.lbSheetSub}>Ranked by active session streak</Text>
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.lbScroll}>
+          {lbLoading ? (
+            <ActivityIndicator color={colors.accent} style={{ marginTop: spacing['3xl'] }} />
+          ) : lbError ? (
+            <Text style={styles.lbEmpty}>Could not load leaderboard: {lbError}</Text>
+          ) : lbEntries.length === 0 ? (
+            <Text style={styles.lbEmpty}>No data yet — complete a workout to appear here!</Text>
+          ) : (
+            <>
+              {lbEntries.map((entry, idx) => (
+                <LeaderboardRow key={entry.userId} entry={entry} showDivider={idx > 0} />
+              ))}
+              {lbCurrentUser && (
+                <>
+                  <View style={styles.lbDash} />
+                  <LeaderboardRow entry={lbCurrentUser} showDivider={false} />
+                </>
+              )}
+            </>
+          )}
+          <View style={{ height: insets.bottom + spacing['2xl'] }} />
+        </ScrollView>
+      </Sheet>
+
       {/* ── Log Workout sheet ──────────────────────────── */}
       <Sheet visible={showWorkoutSheet} onClose={() => setShowWorkoutSheet(false)}>
         <Text style={styles.wkSheetTitle}>Log Workout</Text>
@@ -818,6 +864,15 @@ const styles = StyleSheet.create({
   } satisfies ViewStyle,
   greetingText:  { ...(typography.heading as TextStyle) } satisfies TextStyle,
   dateText: { ...(typography.caption as TextStyle), color: colors.ink3, marginTop: 2 } satisfies TextStyle,
+  greetingActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm } satisfies ViewStyle,
+  trophyBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } satisfies ViewStyle,
 
   // Body Score hero
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg } satisfies ViewStyle,
@@ -986,6 +1041,40 @@ const styles = StyleSheet.create({
   qualityBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.pill } satisfies ViewStyle,
   qualityText:  { ...(typography.label as TextStyle) } satisfies TextStyle,
   sleepDate:    { ...(typography.caption as TextStyle), color: colors.ink3, marginTop: 2 } satisfies TextStyle,
+
+  // Leaderboard sheet
+  lbSheetHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  } satisfies ViewStyle,
+  lbSheetTitle: {
+    ...(typography.subheading as TextStyle),
+    flex: 1,
+  } satisfies TextStyle,
+  lbSheetSub: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  } satisfies TextStyle,
+  lbScroll: { flex: 1 } satisfies ViewStyle,
+  lbEmpty: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink4,
+    textAlign: 'center',
+    marginTop: spacing['3xl'],
+    paddingHorizontal: spacing.lg,
+  } satisfies TextStyle,
+  lbDash: {
+    height: 1,
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.surfaceSunk,
+    marginVertical: spacing.xs,
+  } satisfies ViewStyle,
 });
 
 const mgStyles = StyleSheet.create({
@@ -1010,6 +1099,53 @@ const insightStyles = StyleSheet.create({
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.surfaceSunk } satisfies ViewStyle,
   iconWrap: { width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', flexShrink: 0 } satisfies ViewStyle,
   msg: { ...(typography.caption as TextStyle), color: colors.ink1, flex: 1, lineHeight: 18 } satisfies TextStyle,
+});
+
+// ─── Leaderboard row ──────────────────────────────────────────────────────────
+
+const MEDAL_COLORS = ['#C9A84C', '#9BA9B4', '#A0623A'];
+const MEDAL_LABELS = ['1st', '2nd', '3rd'];
+
+function LeaderboardRow({ entry, showDivider }: { entry: LeaderboardEntry; showDivider: boolean }) {
+  const isTop3 = entry.rank <= 3;
+  const medalColor = isTop3 ? MEDAL_COLORS[entry.rank - 1] : colors.ink3;
+  const rowBg = entry.isCurrentUser ? colors.accent + '12' : 'transparent';
+  return (
+    <View style={[lbRowStyles.row, { backgroundColor: rowBg }, showDivider && lbRowStyles.divider]}>
+      <View style={lbRowStyles.rankWrap}>
+        {isTop3
+          ? <Text style={[lbRowStyles.medal, { color: medalColor }]}>{MEDAL_LABELS[entry.rank - 1]}</Text>
+          : <Text style={[lbRowStyles.rankNum, numericStyle]}>#{entry.rank}</Text>}
+      </View>
+      <Text style={[lbRowStyles.name, entry.isCurrentUser && lbRowStyles.nameSelf]} numberOfLines={1}>
+        {entry.displayName}{entry.isCurrentUser ? ' (you)' : ''}
+      </Text>
+      <View style={lbRowStyles.streakWrap}>
+        <Flame size={14} color={entry.currentStreak > 0 ? '#E8612A' : colors.ink4} strokeWidth={1.75} />
+        <Text style={[lbRowStyles.streakVal, numericStyle, { color: entry.currentStreak > 0 ? colors.ink1 : colors.ink4 }]}>
+          {entry.currentStreak}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const lbRowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  } satisfies ViewStyle,
+  divider: { borderTopWidth: 1, borderTopColor: colors.divider } satisfies ViewStyle,
+  rankWrap: { width: 36, alignItems: 'center' } satisfies ViewStyle,
+  medal: { ...(typography.label as TextStyle), fontWeight: '700', fontSize: 12 } satisfies TextStyle,
+  rankNum: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  name: { flex: 1, ...(typography.bodyMedium as TextStyle), color: colors.ink1 } satisfies TextStyle,
+  nameSelf: { color: colors.accent } satisfies TextStyle,
+  streakWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 } satisfies ViewStyle,
+  streakVal: { ...(typography.bodyMedium as TextStyle), fontSize: 14 } satisfies TextStyle,
 });
 
 const skStyles = StyleSheet.create({

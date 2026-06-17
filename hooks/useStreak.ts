@@ -114,22 +114,53 @@ export function useStreak(): StreakResult {
       // 180 days gives enough history to detect any weekly/biweekly pattern
       const since = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
 
-      const { data, error } = await supabase
-        .from('workouts')
-        .select('completed_at')
-        .eq('user_id', user.id)
-        .gte('completed_at', since)
-        .order('completed_at', { ascending: true });
+      const [workoutsRes, profileRes] = await Promise.all([
+        supabase
+          .from('workouts')
+          .select('completed_at')
+          .eq('user_id', user.id)
+          .gte('completed_at', since)
+          .order('completed_at', { ascending: true }),
+        supabase
+          .from('users')
+          .select('name')
+          .eq('id', user.id)
+          .maybeSingle(),
+      ]);
 
       if (cancelled) return;
 
-      if (error || !data) {
+      if (workoutsRes.error || !workoutsRes.data) {
         setResult(r => ({ ...r, loading: false }));
         return;
       }
 
-      const dates = data.map((w: { completed_at: string }) => w.completed_at.slice(0, 10));
-      setResult({ ...computeStreak(dates), loading: false });
+      const dates = workoutsRes.data.map((w: { completed_at: string }) => w.completed_at.slice(0, 10));
+      const streak = computeStreak(dates);
+
+      setResult({ ...streak, loading: false });
+
+      // Sync to public leaderboard table (fire-and-forget).
+      const displayName =
+        profileRes.data?.name?.trim() ||
+        user.email?.split('@')[0] ||
+        'Anonymous';
+
+      supabase
+        .from('user_streaks')
+        .upsert(
+          {
+            user_id:        user.id,
+            display_name:   displayName,
+            current_streak: streak.current,
+            longest_streak: streak.longest,
+            updated_at:     new Date().toISOString(),
+          } as any,
+          { onConflict: 'user_id' } as any,
+        )
+        .then(({ error }) => {
+          if (error) console.warn('[useStreak] leaderboard sync failed:', error.message);
+        });
     };
 
     run();

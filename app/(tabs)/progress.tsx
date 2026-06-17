@@ -82,8 +82,7 @@ export default function ProgressScreen() {
   const { points, trend, loading: histLoading } = useScoreHistory(range);
   const since = useMemo(() => sinceForRange(range), [range]);
   const { stats, loading: statsLoading } = useProgressStats(since);
-
-  const chartWidth = screenW - CHART_H_OFFSET;
+const chartWidth = screenW - CHART_H_OFFSET;
   const totalScore = score?.total_score ?? null;
   const periodLabel = rangePeriodLabel(range);
 
@@ -224,6 +223,7 @@ export default function ProgressScreen() {
             </Card>
           </>
         )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -530,6 +530,7 @@ const styles = StyleSheet.create({
     ...(typography.body as TextStyle),
     color: colors.ink1,
   } satisfies TextStyle,
+
 });
 
 const barStyles = StyleSheet.create({

@@ -591,6 +591,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      user_streaks: {
+        Row: {
+          user_id: string;
+          display_name: string;
+          current_streak: number;
+          longest_streak: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          display_name?: string;
+          current_streak?: number;
+          longest_streak?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          display_name?: string;
+          current_streak?: number;
+          longest_streak?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};
