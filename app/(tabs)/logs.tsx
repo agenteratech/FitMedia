@@ -1387,7 +1387,156 @@ function SavedMealOptionsSheet({
   );
 }
 
+// ── Ingredient sub-components (used inside the meal builder) ──────────────
+
+function IngredientDetailForMeal({
+  food,
+  onAdd,
+}: {
+  food: FatSecretFood;
+  onAdd: (draft: IngredientDraft) => void;
+}) {
+  const [detail, setDetail] = useState<FatSecretFoodDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [weight, setWeight] = useState('100');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    getFoodDetail(food.food_id)
+      .then((d) => {
+        if (cancelled) return;
+        setDetail(d);
+        const ref = pickReferenceServing(d.servings);
+        if (ref) setWeight(String(Math.round(ref.metric_serving_amount)));
+      })
+      .catch((e) => { if (!cancelled) setLoadError(e.message ?? 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [food.food_id]);
+
+  const reference = useMemo(() => detail ? pickReferenceServing(detail.servings) : null, [detail]);
+  const weightNum = useMemo(() => { const n = parseFloat(weight); return Number.isFinite(n) && n > 0 ? n : 0; }, [weight]);
+  const nutrition = useMemo(() => {
+    if (!reference || reference.metric_serving_amount <= 0 || weightNum <= 0) return { calories: 0, protein: 0, carbs: 0, fats: 0 };
+    const ratio = weightNum / reference.metric_serving_amount;
+    return { calories: reference.calories * ratio, protein: reference.protein * ratio, carbs: reference.carbohydrate * ratio, fats: reference.fat * ratio };
+  }, [reference, weightNum]);
+
+  const unit = reference?.metric_serving_unit ?? 'g';
+
+  if (loading) return <View style={styles.detailLoading}><ActivityIndicator size="small" color={colors.ink3} /></View>;
+  if (loadError || !detail || !reference) return (
+    <View style={styles.sheetBody}>
+      <Text style={styles.sheetError}>{loadError ?? 'No nutrition data available.'}</Text>
+    </View>
+  );
+
+  return (
+    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+      <View>
+        <Text style={styles.sheetFieldLabel}>Weight ({unit})</Text>
+        <View style={styles.weightRow}>
+          <TextInput
+            value={weight}
+            onChangeText={(t) => setWeight(t.replace(/[^0-9.]/g, ''))}
+            keyboardType="decimal-pad"
+            style={styles.weightInput}
+            selectTextOnFocus
+          />
+          <View style={styles.weightChipsRow}>
+            {[50, 100, 150, 200].map((g) => (
+              <Pressable key={g} style={[styles.weightChip, weight === String(g) && styles.weightChipActive]} onPress={() => setWeight(String(g))}>
+                <Text style={[styles.weightChipLabel, weight === String(g) && styles.weightChipLabelActive]}>{g}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <Text style={styles.detailHint}>{reference.serving_description || `${reference.metric_serving_amount}${unit}`}</Text>
+      </View>
+      <View style={styles.nutritionBox}>
+        <View style={styles.nutritionMain}>
+          <Text style={[styles.nutritionCals, numericStyle]}>{Math.round(nutrition.calories)}</Text>
+          <Text style={styles.nutritionCalsUnit}>kcal</Text>
+        </View>
+        <View style={styles.nutritionMacros}>
+          <NutritionStat label="Protein" value={nutrition.protein} />
+          <NutritionStat label="Carbs" value={nutrition.carbs} />
+          <NutritionStat label="Fat" value={nutrition.fats} />
+        </View>
+      </View>
+      <Button
+        label="Add to Meal"
+        fullWidth
+        disabled={weightNum <= 0}
+        onPress={() => onAdd({
+          food_name: food.food_name,
+          quantity: Math.round(weightNum),
+          unit,
+          calories: Math.round(nutrition.calories),
+          protein_g: Math.round(nutrition.protein * 10) / 10,
+          carbs_g: Math.round(nutrition.carbs * 10) / 10,
+          fat_g: Math.round(nutrition.fats * 10) / 10,
+          sort_order: 0,
+        })}
+      />
+    </ScrollView>
+  );
+}
+
+function IngredientManualForm({
+  editDraft,
+  onAdd,
+}: {
+  editDraft: IngredientDraft | null;
+  onAdd: (draft: IngredientDraft) => void;
+}) {
+  const [name, setName] = useState(() => editDraft?.food_name ?? '');
+  const [qty, setQty] = useState(() => editDraft ? String(editDraft.quantity) : '100');
+  const [unit, setUnit] = useState(() => editDraft?.unit ?? 'g');
+  const [cals, setCals] = useState(() => editDraft ? String(editDraft.calories) : '');
+  const [protein, setProtein] = useState(() => editDraft ? String(editDraft.protein_g) : '');
+  const [carbs, setCarbs] = useState(() => editDraft ? String(editDraft.carbs_g) : '');
+  const [fat, setFat] = useState(() => editDraft ? String(editDraft.fat_g) : '');
+
+  return (
+    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+      <Input label="Food name" value={name} onChangeText={setName} autoCapitalize="sentences" autoFocus />
+      <Input label={`Quantity (${unit})`} value={qty} onChangeText={setQty} keyboardType="decimal-pad" />
+      <View>
+        <Text style={mb.unitPickerLabel}>Unit</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mb.unitScrollContent}>
+          {UNITS.map((u) => (
+            <Pressable key={u} style={[mb.unitChip, unit === u && mb.unitChipActive]} onPress={() => setUnit(u)}>
+              <Text style={[mb.unitChipLabel, unit === u && mb.unitChipLabelActive]}>{u}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+      <Input label="Calories (kcal)" value={cals} onChangeText={setCals} keyboardType="decimal-pad" />
+      <View style={styles.macroRow}>
+        <View style={{ flex: 1 }}><Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="decimal-pad" /></View>
+        <View style={{ flex: 1 }}><Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="decimal-pad" /></View>
+        <View style={{ flex: 1 }}><Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="decimal-pad" /></View>
+      </View>
+      <Button
+        label={editDraft ? 'Update Ingredient' : 'Add to Meal'}
+        fullWidth
+        disabled={!name.trim()}
+        onPress={() => {
+          if (!name.trim()) return;
+          onAdd({ food_name: name.trim(), quantity: Number(qty) || 100, unit, calories: Number(cals) || 0, protein_g: Number(protein) || 0, carbs_g: Number(carbs) || 0, fat_g: Number(fat) || 0, sort_order: 0 });
+        }}
+      />
+    </ScrollView>
+  );
+}
+
 // ── CustomMealBuilderSheet ─────────────────────────────────────────────────
+type BuilderIngMode = 'list' | 'search' | 'detail' | 'manual';
+
 function CustomMealBuilderSheet({
   visible,
   editingMeal,
@@ -1405,103 +1554,56 @@ function CustomMealBuilderSheet({
 
   const [mealName, setMealName] = useState('');
   const [ingredients, setIngredients] = useState<IngredientDraft[]>([]);
-  const [showIngForm, setShowIngForm] = useState(false);
-  const [ingEditIdx, setIngEditIdx] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Ingredient form fields
-  const [ingName, setIngName] = useState('');
-  const [ingQty, setIngQty] = useState('100');
-  const [ingUnit, setIngUnit] = useState('g');
-  const [ingCals, setIngCals] = useState('');
-  const [ingP, setIngP] = useState('');
-  const [ingC, setIngC] = useState('');
-  const [ingF, setIngF] = useState('');
+  const [ingMode, setIngMode] = useState<BuilderIngMode>('list');
+  const [selectedIngFood, setSelectedIngFood] = useState<FatSecretFood | null>(null);
+  const [ingEditIdx, setIngEditIdx] = useState<number | null>(null);
 
-  const resetIngForm = () => {
-    setIngName(''); setIngQty('100'); setIngUnit('g');
-    setIngCals(''); setIngP(''); setIngC(''); setIngF('');
-    setIngEditIdx(null);
-  };
-
-  // Initialize when sheet opens or editing meal changes
   useEffect(() => {
     if (!visible) return;
     if (isEdit && editingMeal) {
       setMealName(editingMeal.name);
       setIngredients(editingMeal.ingredients.map((i, idx) => ({
-        food_name: i.food_name,
-        quantity: i.quantity,
-        unit: i.unit,
-        calories: i.calories,
-        protein_g: i.protein_g,
-        carbs_g: i.carbs_g,
-        fat_g: i.fat_g,
-        sort_order: idx,
+        food_name: i.food_name, quantity: i.quantity, unit: i.unit,
+        calories: i.calories, protein_g: i.protein_g, carbs_g: i.carbs_g,
+        fat_g: i.fat_g, sort_order: idx,
       })));
     } else {
       setMealName('');
       setIngredients([]);
     }
-    setShowIngForm(false);
+    setIngMode('list');
+    setSelectedIngFood(null);
+    setIngEditIdx(null);
     setSaving(false);
     setError(null);
-    resetIngForm();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editingMeal?.id]);
 
-  const totals = ingredients.reduce(
-    (acc, i) => ({
-      calories: acc.calories + i.calories,
-      protein: acc.protein + i.protein_g,
-      carbs: acc.carbs + i.carbs_g,
-      fat: acc.fat + i.fat_g,
-    }),
+  const totals = useMemo(() => ingredients.reduce(
+    (acc, i) => ({ calories: acc.calories + i.calories, protein: acc.protein + i.protein_g, carbs: acc.carbs + i.carbs_g, fat: acc.fat + i.fat_g }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
-  );
+  ), [ingredients]);
 
-  const openEditIngredient = (idx: number) => {
-    const ing = ingredients[idx];
-    setIngName(ing.food_name);
-    setIngQty(String(ing.quantity));
-    setIngUnit(ing.unit);
-    setIngCals(String(ing.calories));
-    setIngP(String(ing.protein_g));
-    setIngC(String(ing.carbs_g));
-    setIngF(String(ing.fat_g));
-    setIngEditIdx(idx);
-    setShowIngForm(true);
-  };
+  const goBack = useCallback(() => {
+    setIngMode('list');
+    setSelectedIngFood(null);
+    setIngEditIdx(null);
+  }, []);
 
-  const handleSaveIngredient = () => {
-    if (!ingName.trim()) return;
-    const draft: IngredientDraft = {
-      food_name: ingName.trim(),
-      quantity: Number(ingQty) || 100,
-      unit: ingUnit,
-      calories: Number(ingCals) || 0,
-      protein_g: Number(ingP) || 0,
-      carbs_g: Number(ingC) || 0,
-      fat_g: Number(ingF) || 0,
-      sort_order: ingEditIdx ?? ingredients.length,
-    };
+  const handleAddIngredient = useCallback((draft: IngredientDraft) => {
+    const withOrder = { ...draft, sort_order: ingEditIdx ?? ingredients.length };
     setIngredients((prev) => {
-      if (ingEditIdx !== null) {
-        const updated = [...prev];
-        updated[ingEditIdx] = draft;
-        return updated;
-      }
-      return [...prev, draft];
+      if (ingEditIdx !== null) { const next = [...prev]; next[ingEditIdx] = withOrder; return next; }
+      return [...prev, withOrder];
     });
-    setShowIngForm(false);
-    resetIngForm();
-  };
+    goBack();
+  }, [ingEditIdx, ingredients.length, goBack]);
 
   const handleRemoveIngredient = (idx: number) => {
-    setIngredients((prev) =>
-      prev.filter((_, i) => i !== idx).map((ing, i) => ({ ...ing, sort_order: i }))
-    );
+    setIngredients((prev) => prev.filter((_, i) => i !== idx).map((ing, i) => ({ ...ing, sort_order: i })));
   };
 
   const handleSaveMeal = async () => {
@@ -1516,171 +1618,122 @@ function CustomMealBuilderSheet({
     onClose();
   };
 
+  const headerTitle =
+    ingMode === 'search' ? 'Add Ingredient'
+    : ingMode === 'detail' && selectedIngFood ? selectedIngFood.food_name
+    : ingMode === 'manual' ? (ingEditIdx !== null ? 'Edit Ingredient' : 'Add Manually')
+    : isEdit ? 'Edit Meal' : 'Create Meal';
+
   return (
     <Sheet visible={visible} onClose={onClose} snapPoints={['92%']}>
+      {/* Header */}
       <View style={styles.sheetHeader}>
-        <View style={styles.sheetBackBtn} />
-        <Text style={styles.sheetTitle}>{isEdit ? 'Edit Meal' : 'Create Meal'}</Text>
-        <Pressable onPress={onClose} style={styles.sheetBackBtn}>
+        {ingMode !== 'list' ? (
+          <Pressable onPress={goBack} style={styles.sheetBackBtn}>
+            <ChevronLeft size={20} color={colors.ink2} strokeWidth={1.75} />
+          </Pressable>
+        ) : (
+          <View style={styles.sheetBackBtn} />
+        )}
+        <Text style={styles.sheetTitle} numberOfLines={1}>{headerTitle}</Text>
+        <Pressable onPress={ingMode === 'list' ? onClose : goBack} style={styles.sheetBackBtn}>
           <X size={20} color={colors.ink2} strokeWidth={1.75} />
         </Pressable>
       </View>
 
-      <ScrollView
-        contentContainerStyle={mb.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Input
-          label="Meal Name"
-          value={mealName}
-          onChangeText={setMealName}
-          autoCapitalize="words"
-        />
+      {/* Main meal list view */}
+      {ingMode === 'list' && (
+        <ScrollView contentContainerStyle={mb.listScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Input label="Meal Name" value={mealName} onChangeText={setMealName} autoCapitalize="words" />
 
-        {/* Ingredients list */}
-        {ingredients.length > 0 && (
-          <View style={mb.ingList}>
-            <Text style={mb.ingListLabel}>INGREDIENTS</Text>
-            {ingredients.map((ing, idx) => (
-              <View key={idx} style={mb.ingRow}>
-                <View style={mb.ingRowInfo}>
-                  <Text style={mb.ingRowName} numberOfLines={1}>{ing.food_name}</Text>
-                  <Text style={mb.ingRowMeta}>
-                    {ing.quantity}{ing.unit} · {Math.round(ing.calories)} kcal · P {ing.protein_g.toFixed(0)}g · C {ing.carbs_g.toFixed(0)}g · F {ing.fat_g.toFixed(0)}g
-                  </Text>
+          {ingredients.length > 0 && (
+            <View style={mb.ingSection}>
+              <Text style={mb.ingListLabel}>INGREDIENTS</Text>
+              {ingredients.map((ing, idx) => (
+                <View key={idx} style={mb.ingRow}>
+                  <View style={mb.ingRowInfo}>
+                    <Text style={mb.ingRowName} numberOfLines={1}>{ing.food_name}</Text>
+                    <Text style={mb.ingRowMeta} numberOfLines={1}>
+                      {ing.quantity}{ing.unit} · {Math.round(ing.calories)} kcal · P {ing.protein_g.toFixed(0)}g · C {ing.carbs_g.toFixed(0)}g · F {ing.fat_g.toFixed(0)}g
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => { setIngEditIdx(idx); setIngMode('manual'); }} hitSlop={8} style={mb.ingRowAction}>
+                    <Pencil size={14} color={colors.ink3} strokeWidth={1.75} />
+                  </Pressable>
+                  <Pressable onPress={() => handleRemoveIngredient(idx)} hitSlop={8} style={mb.ingRowAction}>
+                    <X size={14} color={colors.alert} strokeWidth={1.75} />
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => openEditIngredient(idx)} hitSlop={8} style={mb.ingRowAction}>
-                  <Pencil size={14} color={colors.ink3} strokeWidth={1.75} />
-                </Pressable>
-                <Pressable onPress={() => handleRemoveIngredient(idx)} hitSlop={8} style={mb.ingRowAction}>
-                  <X size={14} color={colors.alert} strokeWidth={1.75} />
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        )}
+              ))}
+            </View>
+          )}
 
-        {/* Ingredient form */}
-        {showIngForm ? (
-          <View style={mb.ingForm}>
-            <Text style={mb.ingFormTitle}>
-              {ingEditIdx !== null ? 'Edit Ingredient' : 'Add Ingredient'}
-            </Text>
-            <Input
-              label="Food name"
-              value={ingName}
-              onChangeText={setIngName}
-              autoCapitalize="sentences"
-            />
-            <View style={styles.macroRow}>
-              <View style={{ flex: 2 }}>
-                <Input
-                  label="Quantity"
-                  value={ingQty}
-                  onChangeText={setIngQty}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-              <View style={{ flex: 2 }}>
-                <Text style={mb.unitPickerLabel}>Unit</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={mb.unitScroll}
-                  contentContainerStyle={mb.unitScrollContent}
-                >
-                  {UNITS.map((u) => (
-                    <Pressable
-                      key={u}
-                      style={[mb.unitChip, ingUnit === u && mb.unitChipActive]}
-                      onPress={() => setIngUnit(u)}
-                    >
-                      <Text style={[mb.unitChipLabel, ingUnit === u && mb.unitChipLabelActive]}>
-                        {u}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
+          <Pressable style={mb.addIngBtn} onPress={() => setIngMode('search')}>
+            <View style={mb.addIngIconWrap}>
+              <Plus size={15} color={colors.accent} strokeWidth={2} />
             </View>
-            <Input
-              label="Calories (kcal)"
-              value={ingCals}
-              onChangeText={setIngCals}
-              keyboardType="decimal-pad"
-            />
-            <View style={styles.macroRow}>
-              <View style={{ flex: 1 }}>
-                <Input label="Protein (g)" value={ingP} onChangeText={setIngP} keyboardType="decimal-pad" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Input label="Carbs (g)" value={ingC} onChangeText={setIngC} keyboardType="decimal-pad" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Input label="Fat (g)" value={ingF} onChangeText={setIngF} keyboardType="decimal-pad" />
-              </View>
-            </View>
-            <View style={mb.ingFormActions}>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="Cancel"
-                  variant="secondary"
-                  fullWidth
-                  onPress={() => { setShowIngForm(false); resetIngForm(); }}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label={ingEditIdx !== null ? 'Update' : 'Add'}
-                  fullWidth
-                  disabled={!ingName.trim()}
-                  onPress={handleSaveIngredient}
-                />
-              </View>
-            </View>
-          </View>
-        ) : (
-          <Pressable style={mb.addIngBtn} onPress={() => setShowIngForm(true)}>
-            <Plus size={16} color={colors.accent} strokeWidth={1.75} />
             <Text style={mb.addIngLabel}>Add Ingredient</Text>
+            <ChevronRight size={14} color={colors.ink4} strokeWidth={1.75} />
           </Pressable>
-        )}
 
-        {/* Totals */}
-        {ingredients.length > 0 && !showIngForm && (
-          <View style={mb.totalsBox}>
-            <Text style={mb.totalsTitle}>TOTAL</Text>
-            <View style={mb.totalsRow}>
-              <View style={mb.totalItem}>
-                <Text style={[mb.totalValue, numericStyle]}>{Math.round(totals.calories)}</Text>
-                <Text style={mb.totalLabel}>kcal</Text>
-              </View>
-              <View style={mb.totalItem}>
-                <Text style={[mb.totalValue, numericStyle]}>{totals.protein.toFixed(1)}g</Text>
-                <Text style={mb.totalLabel}>Protein</Text>
-              </View>
-              <View style={mb.totalItem}>
-                <Text style={[mb.totalValue, numericStyle]}>{totals.carbs.toFixed(1)}g</Text>
-                <Text style={mb.totalLabel}>Carbs</Text>
-              </View>
-              <View style={mb.totalItem}>
-                <Text style={[mb.totalValue, numericStyle]}>{totals.fat.toFixed(1)}g</Text>
-                <Text style={mb.totalLabel}>Fat</Text>
+          {ingredients.length > 0 && (
+            <View style={mb.totalsBox}>
+              <Text style={mb.totalsTitle}>MEAL TOTAL</Text>
+              <View style={mb.totalsRow}>
+                <View style={mb.totalItem}>
+                  <Text style={[mb.totalValue, numericStyle]}>{Math.round(totals.calories)}</Text>
+                  <Text style={mb.totalLabel}>kcal</Text>
+                </View>
+                <View style={mb.totalDivider} />
+                <View style={mb.totalItem}>
+                  <Text style={[mb.totalValue, numericStyle]}>{totals.protein.toFixed(1)}g</Text>
+                  <Text style={mb.totalLabel}>Protein</Text>
+                </View>
+                <View style={mb.totalDivider} />
+                <View style={mb.totalItem}>
+                  <Text style={[mb.totalValue, numericStyle]}>{totals.carbs.toFixed(1)}g</Text>
+                  <Text style={mb.totalLabel}>Carbs</Text>
+                </View>
+                <View style={mb.totalDivider} />
+                <View style={mb.totalItem}>
+                  <Text style={[mb.totalValue, numericStyle]}>{totals.fat.toFixed(1)}g</Text>
+                  <Text style={mb.totalLabel}>Fat</Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          )}
 
-        {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+          {error ? <Text style={styles.sheetError}>{error}</Text> : null}
 
-        <Button
-          label={saving ? 'Saving…' : isEdit ? 'Update Meal' : 'Save Meal'}
-          fullWidth
-          disabled={saving || !mealName.trim()}
-          onPress={handleSaveMeal}
+          <Button
+            label={saving ? 'Saving…' : isEdit ? 'Update Meal' : 'Save Meal'}
+            fullWidth
+            disabled={saving || !mealName.trim()}
+            onPress={handleSaveMeal}
+          />
+        </ScrollView>
+      )}
+
+      {/* Ingredient search (re-uses existing FatSecret search view) */}
+      {ingMode === 'search' && (
+        <SearchFoodView
+          onSelect={(food) => { setSelectedIngFood(food); setIngMode('detail'); }}
+          onManual={() => { setIngEditIdx(null); setIngMode('manual'); }}
         />
-      </ScrollView>
+      )}
+
+      {/* Ingredient nutrition picker */}
+      {ingMode === 'detail' && selectedIngFood && (
+        <IngredientDetailForMeal food={selectedIngFood} onAdd={handleAddIngredient} />
+      )}
+
+      {/* Manual ingredient entry / edit */}
+      {ingMode === 'manual' && (
+        <IngredientManualForm
+          editDraft={ingEditIdx !== null ? (ingredients[ingEditIdx] ?? null) : null}
+          onAdd={handleAddIngredient}
+        />
+      )}
     </Sheet>
   );
 }
@@ -2400,65 +2453,63 @@ const ms = StyleSheet.create({
 
 // ── Meal Builder styles ────────────────────────────────────────────────────
 const mb = StyleSheet.create({
-  scroll: {
+  listScroll: {
     paddingHorizontal: spacing['2xl'],
-    paddingBottom: spacing['3xl'],
+    paddingTop: spacing.sm,
+    paddingBottom: spacing['4xl'],
     gap: spacing.md,
   } satisfies ViewStyle,
 
-  // Ingredients list
-  ingList: { gap: spacing.xs } satisfies ViewStyle,
+  ingSection: { gap: spacing.xs } satisfies ViewStyle,
   ingListLabel: {
     ...(typography.label as TextStyle), color: colors.ink3, marginBottom: spacing.xs,
   } satisfies TextStyle,
   ingRow: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.surfaceSunk,
-    borderRadius: radius.input, padding: spacing.md, gap: spacing.sm,
+    borderRadius: radius.input, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   } satisfies ViewStyle,
   ingRowInfo: { flex: 1, gap: 2 } satisfies ViewStyle,
-  ingRowName: { ...(typography.bodyMedium as TextStyle), fontSize: 14 } satisfies TextStyle,
+  ingRowName: { ...(typography.bodyMedium as TextStyle) } satisfies TextStyle,
   ingRowMeta: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
-  ingRowAction: {
-    width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
-  } satisfies ViewStyle,
+  ingRowAction: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' } satisfies ViewStyle,
 
-  // Ingredient form
-  ingForm: {
-    backgroundColor: colors.surfaceSunk,
-    borderRadius: radius.card, padding: spacing.lg, gap: spacing.md,
+  addIngBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSunk, borderRadius: radius.input,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
   } satisfies ViewStyle,
-  ingFormTitle: { ...(typography.subheading as TextStyle), fontSize: 15 } satisfies TextStyle,
-  ingFormActions: { flexDirection: 'row', gap: spacing.sm } satisfies ViewStyle,
+  addIngIconWrap: {
+    width: 28, height: 28, borderRadius: radius.pill,
+    backgroundColor: colors.accent + '22',
+    alignItems: 'center', justifyContent: 'center',
+  } satisfies ViewStyle,
+  addIngLabel: { ...(typography.bodyMedium as TextStyle), color: colors.ink1, flex: 1 } satisfies TextStyle,
 
-  // Unit picker
-  unitPickerLabel: { ...(typography.label as TextStyle), marginTop: spacing.lg, marginBottom: spacing.xs } satisfies TextStyle,
-  unitScroll: { marginTop: spacing.xs } satisfies ViewStyle,
-  unitScrollContent: { gap: spacing.xs, paddingRight: spacing.sm } satisfies ViewStyle,
+  totalsBox: {
+    backgroundColor: colors.surfaceSunk, borderRadius: radius.card, padding: spacing.lg,
+  } satisfies ViewStyle,
+  totalsTitle: {
+    ...(typography.label as TextStyle), color: colors.ink3, marginBottom: spacing.md,
+  } satisfies TextStyle,
+  totalsRow: { flexDirection: 'row', alignItems: 'center' } satisfies ViewStyle,
+  totalItem: { flex: 1, alignItems: 'center', gap: 2 } satisfies ViewStyle,
+  totalDivider: { width: 1, height: 28, backgroundColor: colors.surfaceElevBorder } satisfies ViewStyle,
+  totalValue: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
+  totalLabel: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
+
+  // Unit picker (manual form)
+  unitPickerLabel: {
+    ...(typography.label as TextStyle), color: colors.ink3, marginBottom: spacing.xs,
+  } satisfies TextStyle,
+  unitScrollContent: { gap: spacing.xs, paddingBottom: spacing.xs } satisfies ViewStyle,
   unitChip: {
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
     borderRadius: radius.pill, backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.surfaceElevBorder,
   } satisfies ViewStyle,
   unitChipActive: { backgroundColor: colors.ink1, borderColor: colors.ink1 } satisfies ViewStyle,
   unitChipLabel: { ...(typography.caption as TextStyle), color: colors.ink2 } satisfies TextStyle,
   unitChipLabelActive: { color: colors.surface } satisfies TextStyle,
-
-  // Add ingredient button
-  addIngBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    paddingVertical: spacing.md, alignSelf: 'center',
-  } satisfies ViewStyle,
-  addIngLabel: { ...(typography.bodyMedium as TextStyle), color: colors.accent, fontSize: 14 } satisfies TextStyle,
-
-  // Totals box
-  totalsBox: {
-    backgroundColor: colors.surfaceSunk,
-    borderRadius: radius.card, padding: spacing.lg, gap: spacing.sm,
-  } satisfies ViewStyle,
-  totalsTitle: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
-  totalsRow: { flexDirection: 'row', justifyContent: 'space-between' } satisfies ViewStyle,
-  totalItem: { alignItems: 'center', gap: 2 } satisfies ViewStyle,
-  totalValue: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
-  totalLabel: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
 });
