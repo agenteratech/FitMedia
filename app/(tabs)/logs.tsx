@@ -16,7 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg';
 import Slider from '@react-native-community/slider';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2 } from 'lucide-react-native';
+import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2, Copy, ChefHat } from 'lucide-react-native';
+import { useCustomMeals, type CustomMeal, type IngredientDraft } from '../../hooks/useCustomMeals';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useDietLogs, type DietLog } from '../../hooks/useDietLogs';
 import { useSleepLogs } from '../../hooks/useSleepLogs';
@@ -69,6 +70,8 @@ const QUALITY_OPTIONS: { label: string; value: SleepQuality }[] = [
 ];
 
 const SEGMENT_KEY = 'logs_last_segment';
+
+const UNITS = ['g', 'ml', 'oz', 'cup', 'tbsp', 'tsp', 'serving', 'piece'] as const;
 
 // ── Calorie ring ────────────────────────────────────────────────────────────
 const CAL_SIZE = 160;
@@ -181,6 +184,18 @@ export default function LogsScreen() {
     });
     return m;
   }, [workoutItems, sleepItems]);
+
+  // Custom meals
+  const {
+    meals: customMeals,
+    recentMeals: recentCustomMeals,
+    createMeal,
+    updateMeal,
+    deleteMeal,
+    duplicateMeal,
+  } = useCustomMeals();
+  const [showMealBuilder, setShowMealBuilder] = useState(false);
+  const [editingCustomMeal, setEditingCustomMeal] = useState<CustomMeal | null>(null);
 
   // Sheet state
   const [addFoodMealType, setAddFoodMealType] = useState<string | null>(null);
@@ -306,6 +321,36 @@ export default function LogsScreen() {
         userId={user?.id ?? ''}
         onClose={() => setAddFoodMealType(null)}
         onSaved={() => { setAddFoodMealType(null); refetchDiet(); }}
+        customMeals={customMeals}
+        recentCustomMeals={recentCustomMeals}
+        onCreateMeal={() => {
+          setAddFoodMealType(null);
+          setTimeout(() => setShowMealBuilder(true), 350);
+        }}
+        onEditMeal={(meal) => {
+          setAddFoodMealType(null);
+          setTimeout(() => { setEditingCustomMeal(meal); setShowMealBuilder(true); }, 350);
+        }}
+        onDuplicateMeal={duplicateMeal}
+        onDeleteMeal={(meal) => {
+          Alert.alert(
+            'Delete Meal',
+            `Delete "${meal.name}"? This cannot be undone.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => deleteMeal(meal.id) },
+            ],
+          );
+        }}
+      />
+
+      {/* Custom meal builder sheet */}
+      <CustomMealBuilderSheet
+        visible={showMealBuilder}
+        editingMeal={editingCustomMeal}
+        onClose={() => { setShowMealBuilder(false); setEditingCustomMeal(null); }}
+        onCreate={createMeal}
+        onUpdate={updateMeal}
       />
 
       {/* Food options sheet — always mounted, shown when a ··· is tapped */}
@@ -666,7 +711,7 @@ function SleepSegment({
 }
 
 // ── AddFoodSheet ───────────────────────────────────────────────────────────
-type AddFoodMode = 'search' | 'detail' | 'manual';
+type AddFoodMode = 'search' | 'detail' | 'manual' | 'mymeals';
 
 function AddFoodSheet({
   visible,
@@ -675,6 +720,12 @@ function AddFoodSheet({
   userId,
   onClose,
   onSaved,
+  customMeals,
+  recentCustomMeals,
+  onCreateMeal,
+  onEditMeal,
+  onDuplicateMeal,
+  onDeleteMeal,
 }: {
   visible: boolean;
   mealType: string;
@@ -682,23 +733,36 @@ function AddFoodSheet({
   userId: string;
   onClose: () => void;
   onSaved: () => void;
+  customMeals: CustomMeal[];
+  recentCustomMeals: CustomMeal[];
+  onCreateMeal: () => void;
+  onEditMeal: (meal: CustomMeal) => void;
+  onDuplicateMeal: (meal: CustomMeal) => Promise<string | null>;
+  onDeleteMeal: (meal: CustomMeal) => void;
 }) {
   const [mode, setMode] = useState<AddFoodMode>('search');
   const [selectedFood, setSelectedFood] = useState<FatSecretFood | null>(null);
 
   const mealLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1);
 
+  // Reset to search each time the sheet opens
+  useEffect(() => {
+    if (visible) { setMode('search'); setSelectedFood(null); }
+  }, [visible]);
+
   const headerTitle =
-    mode === 'detail' && selectedFood
-      ? selectedFood.food_name
-      : mode === 'manual'
-      ? 'Enter manually'
-      : `Add to ${mealLabel}`;
+    mode === 'detail' && selectedFood ? selectedFood.food_name
+    : mode === 'manual' ? 'Enter manually'
+    : mode === 'mymeals' ? 'My Meals'
+    : `Add to ${mealLabel}`;
+
+  const showTabs = mode === 'search' || mode === 'mymeals';
+  const showBack = mode === 'detail' || mode === 'manual';
 
   return (
     <Sheet visible={visible} onClose={onClose} snapPoints={['82%']}>
       <View style={styles.sheetHeader}>
-        {mode !== 'search' ? (
+        {showBack ? (
           <Pressable onPress={() => setMode('search')} style={styles.sheetBackBtn}>
             <ChevronLeft size={20} color={colors.ink2} strokeWidth={1.75} />
           </Pressable>
@@ -710,6 +774,24 @@ function AddFoodSheet({
           <X size={20} color={colors.ink2} strokeWidth={1.75} />
         </Pressable>
       </View>
+
+      {/* Tab switcher — only visible on root search/mymeals modes */}
+      {showTabs && (
+        <View style={ms.tabRow}>
+          <Pressable
+            style={[ms.tab, mode === 'search' && ms.tabActive]}
+            onPress={() => setMode('search')}
+          >
+            <Text style={[ms.tabLabel, mode === 'search' && ms.tabLabelActive]}>Search Food</Text>
+          </Pressable>
+          <Pressable
+            style={[ms.tab, mode === 'mymeals' && ms.tabActive]}
+            onPress={() => setMode('mymeals')}
+          >
+            <Text style={[ms.tabLabel, mode === 'mymeals' && ms.tabLabelActive]}>My Meals</Text>
+          </Pressable>
+        </View>
+      )}
 
       {mode === 'search' && (
         <SearchFoodView
@@ -734,6 +816,21 @@ function AddFoodSheet({
           date={date}
           userId={userId}
           onSaved={onSaved}
+        />
+      )}
+      {mode === 'mymeals' && (
+        <MyMealsView
+          meals={customMeals}
+          recentMeals={recentCustomMeals}
+          mealType={mealType}
+          mealLabel={mealLabel}
+          date={date}
+          userId={userId}
+          onSaved={onSaved}
+          onCreateMeal={onCreateMeal}
+          onEditMeal={onEditMeal}
+          onDuplicateMeal={onDuplicateMeal}
+          onDeleteMeal={onDeleteMeal}
         />
       )}
     </Sheet>
@@ -1069,6 +1166,522 @@ function ManualFoodView({
       {error ? <Text style={styles.sheetError}>{error}</Text> : null}
       <Button label={saving ? 'Saving…' : `Add to ${mealLabel}`} fullWidth disabled={saving} onPress={handleSave} />
     </ScrollView>
+  );
+}
+
+// ── MyMealsView ───────────────────────────────────────────────────────────
+function MyMealsView({
+  meals,
+  recentMeals,
+  mealType,
+  mealLabel,
+  date,
+  userId,
+  onSaved,
+  onCreateMeal,
+  onEditMeal,
+  onDuplicateMeal,
+  onDeleteMeal,
+}: {
+  meals: CustomMeal[];
+  recentMeals: CustomMeal[];
+  mealType: string;
+  mealLabel: string;
+  date: string;
+  userId: string;
+  onSaved: () => void;
+  onCreateMeal: () => void;
+  onEditMeal: (meal: CustomMeal) => void;
+  onDuplicateMeal: (meal: CustomMeal) => Promise<string | null>;
+  onDeleteMeal: (meal: CustomMeal) => void;
+}) {
+  const [optionsMeal, setOptionsMeal] = useState<CustomMeal | null>(null);
+  const [logging, setLogging] = useState<string | null>(null);
+  const [logError, setLogError] = useState<string | null>(null);
+
+  const handleLog = async (meal: CustomMeal) => {
+    if (!userId) return;
+    setLogging(meal.id);
+    setLogError(null);
+    const { error } = await saveDietLog({
+      userId,
+      date,
+      mealType,
+      description: meal.name,
+      calories: Math.round(meal.total_calories),
+      protein: meal.total_protein_g,
+      carbs: meal.total_carbs_g,
+      fats: meal.total_fat_g,
+      customMealId: meal.id,
+    });
+    setLogging(null);
+    if (error) { setLogError(error); return; }
+    recalculateScores().catch(console.error);
+    onSaved();
+  };
+
+  if (meals.length === 0) {
+    return (
+      <View style={ms.empty}>
+        <ChefHat size={44} color={colors.ink4} strokeWidth={1.5} />
+        <Text style={ms.emptyTitle}>No saved meals yet</Text>
+        <Text style={ms.emptyCaption}>
+          Create a meal once, log it instantly every time
+        </Text>
+        <Pressable style={ms.createBtnCard} onPress={onCreateMeal}>
+          <Plus size={16} color={colors.surface} strokeWidth={2} />
+          <Text style={ms.createBtnCardLabel}>Create Your First Meal</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={ms.scroll}
+      contentContainerStyle={ms.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {recentMeals.length > 0 && (
+        <>
+          <Text style={ms.sectionLabel}>RECENTLY USED</Text>
+          {recentMeals.map((meal) => (
+            <MealRow
+              key={`recent-${meal.id}`}
+              meal={meal}
+              mealLabel={mealLabel}
+              isLogging={logging === meal.id}
+              onLog={() => handleLog(meal)}
+              onOptions={() => setOptionsMeal(meal)}
+            />
+          ))}
+        </>
+      )}
+
+      <Text style={ms.sectionLabel}>ALL MY MEALS</Text>
+      {meals.map((meal) => (
+        <MealRow
+          key={meal.id}
+          meal={meal}
+          mealLabel={mealLabel}
+          isLogging={logging === meal.id}
+          onLog={() => handleLog(meal)}
+          onOptions={() => setOptionsMeal(meal)}
+        />
+      ))}
+
+      {logError ? <Text style={styles.sheetError}>{logError}</Text> : null}
+
+      <Pressable style={ms.createLink} onPress={onCreateMeal}>
+        <Plus size={15} color={colors.accent} strokeWidth={1.75} />
+        <Text style={ms.createLinkLabel}>Create New Meal</Text>
+      </Pressable>
+
+      <SavedMealOptionsSheet
+        meal={optionsMeal}
+        visible={optionsMeal !== null}
+        onClose={() => setOptionsMeal(null)}
+        onEdit={() => {
+          const meal = optionsMeal!;
+          setOptionsMeal(null);
+          setTimeout(() => onEditMeal(meal), 300);
+        }}
+        onDuplicate={() => {
+          const meal = optionsMeal!;
+          setOptionsMeal(null);
+          onDuplicateMeal(meal);
+        }}
+        onDelete={() => {
+          const meal = optionsMeal!;
+          setOptionsMeal(null);
+          onDeleteMeal(meal);
+        }}
+      />
+    </ScrollView>
+  );
+}
+
+function MealRow({
+  meal,
+  mealLabel,
+  isLogging,
+  onLog,
+  onOptions,
+}: {
+  meal: CustomMeal;
+  mealLabel: string;
+  isLogging: boolean;
+  onLog: () => void;
+  onOptions: () => void;
+}) {
+  return (
+    <View style={ms.mealRow}>
+      <View style={ms.mealInfo}>
+        <Text style={ms.mealName} numberOfLines={1}>{meal.name}</Text>
+        <Text style={ms.mealMeta} numberOfLines={1}>
+          {meal.ingredients.length > 0
+            ? `${meal.ingredients.length} ingredient${meal.ingredients.length !== 1 ? 's' : ''} · `
+            : ''}{Math.round(meal.total_calories)} kcal
+        </Text>
+        <Text style={ms.mealMacros} numberOfLines={1}>
+          P {meal.total_protein_g.toFixed(1)}g · C {meal.total_carbs_g.toFixed(1)}g · F {meal.total_fat_g.toFixed(1)}g
+        </Text>
+      </View>
+      <Pressable style={ms.mealOptionsBtn} onPress={onOptions} hitSlop={8}>
+        <MoreHorizontal size={18} color={colors.ink3} strokeWidth={1.75} />
+      </Pressable>
+      <Pressable
+        style={[ms.addBtn, isLogging && ms.addBtnDisabled]}
+        onPress={onLog}
+        disabled={isLogging}
+      >
+        <Text style={ms.addBtnLabel}>{isLogging ? '…' : `Add`}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// ── SavedMealOptionsSheet ──────────────────────────────────────────────────
+function SavedMealOptionsSheet({
+  meal,
+  visible,
+  onClose,
+  onEdit,
+  onDuplicate,
+  onDelete,
+}: {
+  meal: CustomMeal | null;
+  visible: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.optSheetHead}>
+        <Text style={styles.optSheetTitle} numberOfLines={1}>{meal?.name ?? ''}</Text>
+        <Text style={styles.optSheetSub}>{Math.round(meal?.total_calories ?? 0)} kcal</Text>
+      </View>
+      <View style={styles.optSheetDivider} />
+      <Pressable style={styles.optSheetRow} onPress={onEdit}>
+        <Pencil size={19} color={colors.ink2} strokeWidth={1.75} />
+        <Text style={styles.optSheetLabel}>Edit Meal</Text>
+      </Pressable>
+      <View style={styles.optSheetDivider} />
+      <Pressable style={styles.optSheetRow} onPress={onDuplicate}>
+        <Copy size={19} color={colors.ink2} strokeWidth={1.75} />
+        <Text style={styles.optSheetLabel}>Duplicate Meal</Text>
+      </Pressable>
+      <View style={styles.optSheetDivider} />
+      <Pressable style={styles.optSheetRow} onPress={onDelete}>
+        <Trash2 size={19} color={colors.alert} strokeWidth={1.75} />
+        <Text style={styles.optSheetDestructive}>Delete Meal</Text>
+      </Pressable>
+      <View style={[styles.optSheetCancel, { paddingBottom: insets.bottom + spacing.lg }]}>
+        <Button label="Cancel" variant="secondary" fullWidth onPress={onClose} />
+      </View>
+    </Sheet>
+  );
+}
+
+// ── CustomMealBuilderSheet ─────────────────────────────────────────────────
+function CustomMealBuilderSheet({
+  visible,
+  editingMeal,
+  onClose,
+  onCreate,
+  onUpdate,
+}: {
+  visible: boolean;
+  editingMeal: CustomMeal | null;
+  onClose: () => void;
+  onCreate: (name: string, ingredients: IngredientDraft[]) => Promise<string | null>;
+  onUpdate: (id: string, name: string, ingredients: IngredientDraft[]) => Promise<string | null>;
+}) {
+  const isEdit = editingMeal !== null;
+
+  const [mealName, setMealName] = useState('');
+  const [ingredients, setIngredients] = useState<IngredientDraft[]>([]);
+  const [showIngForm, setShowIngForm] = useState(false);
+  const [ingEditIdx, setIngEditIdx] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Ingredient form fields
+  const [ingName, setIngName] = useState('');
+  const [ingQty, setIngQty] = useState('100');
+  const [ingUnit, setIngUnit] = useState('g');
+  const [ingCals, setIngCals] = useState('');
+  const [ingP, setIngP] = useState('');
+  const [ingC, setIngC] = useState('');
+  const [ingF, setIngF] = useState('');
+
+  const resetIngForm = () => {
+    setIngName(''); setIngQty('100'); setIngUnit('g');
+    setIngCals(''); setIngP(''); setIngC(''); setIngF('');
+    setIngEditIdx(null);
+  };
+
+  // Initialize when sheet opens or editing meal changes
+  useEffect(() => {
+    if (!visible) return;
+    if (isEdit && editingMeal) {
+      setMealName(editingMeal.name);
+      setIngredients(editingMeal.ingredients.map((i, idx) => ({
+        food_name: i.food_name,
+        quantity: i.quantity,
+        unit: i.unit,
+        calories: i.calories,
+        protein_g: i.protein_g,
+        carbs_g: i.carbs_g,
+        fat_g: i.fat_g,
+        sort_order: idx,
+      })));
+    } else {
+      setMealName('');
+      setIngredients([]);
+    }
+    setShowIngForm(false);
+    setSaving(false);
+    setError(null);
+    resetIngForm();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, editingMeal?.id]);
+
+  const totals = ingredients.reduce(
+    (acc, i) => ({
+      calories: acc.calories + i.calories,
+      protein: acc.protein + i.protein_g,
+      carbs: acc.carbs + i.carbs_g,
+      fat: acc.fat + i.fat_g,
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 },
+  );
+
+  const openEditIngredient = (idx: number) => {
+    const ing = ingredients[idx];
+    setIngName(ing.food_name);
+    setIngQty(String(ing.quantity));
+    setIngUnit(ing.unit);
+    setIngCals(String(ing.calories));
+    setIngP(String(ing.protein_g));
+    setIngC(String(ing.carbs_g));
+    setIngF(String(ing.fat_g));
+    setIngEditIdx(idx);
+    setShowIngForm(true);
+  };
+
+  const handleSaveIngredient = () => {
+    if (!ingName.trim()) return;
+    const draft: IngredientDraft = {
+      food_name: ingName.trim(),
+      quantity: Number(ingQty) || 100,
+      unit: ingUnit,
+      calories: Number(ingCals) || 0,
+      protein_g: Number(ingP) || 0,
+      carbs_g: Number(ingC) || 0,
+      fat_g: Number(ingF) || 0,
+      sort_order: ingEditIdx ?? ingredients.length,
+    };
+    setIngredients((prev) => {
+      if (ingEditIdx !== null) {
+        const updated = [...prev];
+        updated[ingEditIdx] = draft;
+        return updated;
+      }
+      return [...prev, draft];
+    });
+    setShowIngForm(false);
+    resetIngForm();
+  };
+
+  const handleRemoveIngredient = (idx: number) => {
+    setIngredients((prev) =>
+      prev.filter((_, i) => i !== idx).map((ing, i) => ({ ...ing, sort_order: i }))
+    );
+  };
+
+  const handleSaveMeal = async () => {
+    if (!mealName.trim()) { setError('Please enter a meal name'); return; }
+    setSaving(true);
+    setError(null);
+    const err = isEdit && editingMeal
+      ? await onUpdate(editingMeal.id, mealName.trim(), ingredients)
+      : await onCreate(mealName.trim(), ingredients);
+    setSaving(false);
+    if (err) { setError(err); return; }
+    onClose();
+  };
+
+  return (
+    <Sheet visible={visible} onClose={onClose} snapPoints={['92%']}>
+      <View style={styles.sheetHeader}>
+        <View style={styles.sheetBackBtn} />
+        <Text style={styles.sheetTitle}>{isEdit ? 'Edit Meal' : 'Create Meal'}</Text>
+        <Pressable onPress={onClose} style={styles.sheetBackBtn}>
+          <X size={20} color={colors.ink2} strokeWidth={1.75} />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={mb.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Input
+          label="Meal Name"
+          value={mealName}
+          onChangeText={setMealName}
+          autoCapitalize="words"
+        />
+
+        {/* Ingredients list */}
+        {ingredients.length > 0 && (
+          <View style={mb.ingList}>
+            <Text style={mb.ingListLabel}>INGREDIENTS</Text>
+            {ingredients.map((ing, idx) => (
+              <View key={idx} style={mb.ingRow}>
+                <View style={mb.ingRowInfo}>
+                  <Text style={mb.ingRowName} numberOfLines={1}>{ing.food_name}</Text>
+                  <Text style={mb.ingRowMeta}>
+                    {ing.quantity}{ing.unit} · {Math.round(ing.calories)} kcal · P {ing.protein_g.toFixed(0)}g · C {ing.carbs_g.toFixed(0)}g · F {ing.fat_g.toFixed(0)}g
+                  </Text>
+                </View>
+                <Pressable onPress={() => openEditIngredient(idx)} hitSlop={8} style={mb.ingRowAction}>
+                  <Pencil size={14} color={colors.ink3} strokeWidth={1.75} />
+                </Pressable>
+                <Pressable onPress={() => handleRemoveIngredient(idx)} hitSlop={8} style={mb.ingRowAction}>
+                  <X size={14} color={colors.alert} strokeWidth={1.75} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Ingredient form */}
+        {showIngForm ? (
+          <View style={mb.ingForm}>
+            <Text style={mb.ingFormTitle}>
+              {ingEditIdx !== null ? 'Edit Ingredient' : 'Add Ingredient'}
+            </Text>
+            <Input
+              label="Food name"
+              value={ingName}
+              onChangeText={setIngName}
+              autoCapitalize="sentences"
+            />
+            <View style={styles.macroRow}>
+              <View style={{ flex: 2 }}>
+                <Input
+                  label="Quantity"
+                  value={ingQty}
+                  onChangeText={setIngQty}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={{ flex: 2 }}>
+                <Text style={mb.unitPickerLabel}>Unit</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={mb.unitScroll}
+                  contentContainerStyle={mb.unitScrollContent}
+                >
+                  {UNITS.map((u) => (
+                    <Pressable
+                      key={u}
+                      style={[mb.unitChip, ingUnit === u && mb.unitChipActive]}
+                      onPress={() => setIngUnit(u)}
+                    >
+                      <Text style={[mb.unitChipLabel, ingUnit === u && mb.unitChipLabelActive]}>
+                        {u}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+            <Input
+              label="Calories (kcal)"
+              value={ingCals}
+              onChangeText={setIngCals}
+              keyboardType="decimal-pad"
+            />
+            <View style={styles.macroRow}>
+              <View style={{ flex: 1 }}>
+                <Input label="Protein (g)" value={ingP} onChangeText={setIngP} keyboardType="decimal-pad" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Carbs (g)" value={ingC} onChangeText={setIngC} keyboardType="decimal-pad" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Fat (g)" value={ingF} onChangeText={setIngF} keyboardType="decimal-pad" />
+              </View>
+            </View>
+            <View style={mb.ingFormActions}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => { setShowIngForm(false); resetIngForm(); }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label={ingEditIdx !== null ? 'Update' : 'Add'}
+                  fullWidth
+                  disabled={!ingName.trim()}
+                  onPress={handleSaveIngredient}
+                />
+              </View>
+            </View>
+          </View>
+        ) : (
+          <Pressable style={mb.addIngBtn} onPress={() => setShowIngForm(true)}>
+            <Plus size={16} color={colors.accent} strokeWidth={1.75} />
+            <Text style={mb.addIngLabel}>Add Ingredient</Text>
+          </Pressable>
+        )}
+
+        {/* Totals */}
+        {ingredients.length > 0 && !showIngForm && (
+          <View style={mb.totalsBox}>
+            <Text style={mb.totalsTitle}>TOTAL</Text>
+            <View style={mb.totalsRow}>
+              <View style={mb.totalItem}>
+                <Text style={[mb.totalValue, numericStyle]}>{Math.round(totals.calories)}</Text>
+                <Text style={mb.totalLabel}>kcal</Text>
+              </View>
+              <View style={mb.totalItem}>
+                <Text style={[mb.totalValue, numericStyle]}>{totals.protein.toFixed(1)}g</Text>
+                <Text style={mb.totalLabel}>Protein</Text>
+              </View>
+              <View style={mb.totalItem}>
+                <Text style={[mb.totalValue, numericStyle]}>{totals.carbs.toFixed(1)}g</Text>
+                <Text style={mb.totalLabel}>Carbs</Text>
+              </View>
+              <View style={mb.totalItem}>
+                <Text style={[mb.totalValue, numericStyle]}>{totals.fat.toFixed(1)}g</Text>
+                <Text style={mb.totalLabel}>Fat</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+
+        <Button
+          label={saving ? 'Saving…' : isEdit ? 'Update Meal' : 'Save Meal'}
+          fullWidth
+          disabled={saving || !mealName.trim()}
+          onPress={handleSaveMeal}
+        />
+      </ScrollView>
+    </Sheet>
   );
 }
 
@@ -1695,4 +2308,157 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill, backgroundColor: colors.surfaceSunk, marginTop: spacing.xs,
   } satisfies ViewStyle,
   calTodayLabel: { ...(typography.bodyMedium as TextStyle), color: colors.ink2 } satisfies TextStyle,
+});
+
+// ── My Meals styles ────────────────────────────────────────────────────────
+const ms = StyleSheet.create({
+  // Tab switcher inside AddFoodSheet
+  tabRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing['2xl'],
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.pill,
+    padding: 3,
+  } satisfies ViewStyle,
+  tab: {
+    flex: 1, paddingVertical: spacing.sm,
+    borderRadius: radius.pill, alignItems: 'center',
+  } satisfies ViewStyle,
+  tabActive: { backgroundColor: colors.surface } satisfies ViewStyle,
+  tabLabel: { ...(typography.bodyMedium as TextStyle), color: colors.ink3, fontSize: 13 } satisfies TextStyle,
+  tabLabelActive: { color: colors.ink1 } satisfies TextStyle,
+
+  // Scroll container for My Meals list
+  scroll: { flex: 1 } satisfies ViewStyle,
+  scrollContent: {
+    paddingHorizontal: spacing['2xl'],
+    paddingBottom: spacing['3xl'],
+    gap: spacing.xs,
+  } satisfies ViewStyle,
+  sectionLabel: {
+    ...(typography.label as TextStyle),
+    color: colors.ink3,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  } satisfies TextStyle,
+
+  // Meal row
+  mealRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceElevBorder,
+    gap: spacing.sm,
+  } satisfies ViewStyle,
+  mealInfo: { flex: 1, gap: 2 } satisfies ViewStyle,
+  mealName: { ...(typography.bodyMedium as TextStyle), fontSize: 14 } satisfies TextStyle,
+  mealMeta: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  mealMacros: { ...(typography.caption as TextStyle), color: colors.ink4, fontSize: 11 } satisfies TextStyle,
+  mealOptionsBtn: {
+    width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+  } satisfies ViewStyle,
+  addBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.buttonCompact,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    minWidth: 52, alignItems: 'center',
+  } satisfies ViewStyle,
+  addBtnDisabled: { opacity: 0.5 } satisfies ViewStyle,
+  addBtnLabel: { ...(typography.label as TextStyle), color: colors.surface } satisfies TextStyle,
+
+  // Empty state
+  empty: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: spacing['2xl'], paddingTop: spacing['4xl'],
+    gap: spacing.md,
+  } satisfies ViewStyle,
+  emptyTitle: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
+  emptyCaption: {
+    ...(typography.caption as TextStyle), color: colors.ink3,
+    textAlign: 'center',
+  } satisfies TextStyle,
+  createBtnCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.accent, borderRadius: radius.button,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+  } satisfies ViewStyle,
+  createBtnCardLabel: {
+    ...(typography.bodyMedium as TextStyle), color: colors.surface,
+  } satisfies TextStyle,
+
+  // Create link at bottom of list
+  createLink: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    paddingTop: spacing.lg, paddingBottom: spacing.sm, alignSelf: 'center',
+  } satisfies ViewStyle,
+  createLinkLabel: { ...(typography.bodyMedium as TextStyle), color: colors.accent, fontSize: 13 } satisfies TextStyle,
+});
+
+// ── Meal Builder styles ────────────────────────────────────────────────────
+const mb = StyleSheet.create({
+  scroll: {
+    paddingHorizontal: spacing['2xl'],
+    paddingBottom: spacing['3xl'],
+    gap: spacing.md,
+  } satisfies ViewStyle,
+
+  // Ingredients list
+  ingList: { gap: spacing.xs } satisfies ViewStyle,
+  ingListLabel: {
+    ...(typography.label as TextStyle), color: colors.ink3, marginBottom: spacing.xs,
+  } satisfies TextStyle,
+  ingRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.input, padding: spacing.md, gap: spacing.sm,
+  } satisfies ViewStyle,
+  ingRowInfo: { flex: 1, gap: 2 } satisfies ViewStyle,
+  ingRowName: { ...(typography.bodyMedium as TextStyle), fontSize: 14 } satisfies TextStyle,
+  ingRowMeta: { ...(typography.caption as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  ingRowAction: {
+    width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+  } satisfies ViewStyle,
+
+  // Ingredient form
+  ingForm: {
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.card, padding: spacing.lg, gap: spacing.md,
+  } satisfies ViewStyle,
+  ingFormTitle: { ...(typography.subheading as TextStyle), fontSize: 15 } satisfies TextStyle,
+  ingFormActions: { flexDirection: 'row', gap: spacing.sm } satisfies ViewStyle,
+
+  // Unit picker
+  unitPickerLabel: { ...(typography.label as TextStyle), marginTop: spacing.lg, marginBottom: spacing.xs } satisfies TextStyle,
+  unitScroll: { marginTop: spacing.xs } satisfies ViewStyle,
+  unitScrollContent: { gap: spacing.xs, paddingRight: spacing.sm } satisfies ViewStyle,
+  unitChip: {
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+    borderRadius: radius.pill, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.surfaceElevBorder,
+  } satisfies ViewStyle,
+  unitChipActive: { backgroundColor: colors.ink1, borderColor: colors.ink1 } satisfies ViewStyle,
+  unitChipLabel: { ...(typography.caption as TextStyle), color: colors.ink2 } satisfies TextStyle,
+  unitChipLabelActive: { color: colors.surface } satisfies TextStyle,
+
+  // Add ingredient button
+  addIngBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    paddingVertical: spacing.md, alignSelf: 'center',
+  } satisfies ViewStyle,
+  addIngLabel: { ...(typography.bodyMedium as TextStyle), color: colors.accent, fontSize: 14 } satisfies TextStyle,
+
+  // Totals box
+  totalsBox: {
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.card, padding: spacing.lg, gap: spacing.sm,
+  } satisfies ViewStyle,
+  totalsTitle: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
+  totalsRow: { flexDirection: 'row', justifyContent: 'space-between' } satisfies ViewStyle,
+  totalItem: { alignItems: 'center', gap: 2 } satisfies ViewStyle,
+  totalValue: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
+  totalLabel: { ...(typography.label as TextStyle), color: colors.ink3 } satisfies TextStyle,
 });

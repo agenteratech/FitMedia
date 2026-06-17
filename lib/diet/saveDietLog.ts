@@ -11,6 +11,8 @@ export interface SaveDietLogParams {
   fats: number;
   /** Provide to update an existing entry instead of inserting a new one */
   editingId?: string;
+  /** Set when logging a saved custom meal so recent-meals tracking works */
+  customMealId?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export async function saveDietLog(params: SaveDietLogParams): Promise<{ error: s
     protein_g: params.protein,
     carbs_g: params.carbs,
     fats_g: params.fats,
-  });
+    ...(params.customMealId ? { custom_meal_id: params.customMealId } : {}),
+  } as any);
   return { error: error?.message ?? null };
 }
