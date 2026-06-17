@@ -1,7 +1,7 @@
 ﻿import { AppState, Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Database } from '../types/database';
-import { storage } from './storage';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -13,26 +13,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 /**
- * Storage adapter that persists the Supabase auth session in MMKV.
- *
- * Without this, supabase-js has nowhere to write the session on React Native
- * (there is no localStorage), so `persistSession` silently falls back to
- * in-memory storage and the user is logged out on every app restart.
- * MMKV is synchronous and returns strings, which satisfies the adapter contract.
+ * AsyncStorage adapter for Supabase auth session persistence.
+ * Works in both Expo Go and native dev builds (unlike MMKV which requires a
+ * native build and would silently fall back to in-memory storage in Expo Go,
+ * causing the user to be logged out on every app restart).
  */
-const mmkvAuthStorage = {
-  getItem: (key: string): string | null => storage.getString(key) ?? null,
-  setItem: (key: string, value: string): void => {
-    storage.set(key, value);
-  },
-  removeItem: (key: string): void => {
-    storage.delete(key);
-  },
+const asyncAuthStorage = {
+  getItem: (key: string) => AsyncStorage.getItem(key),
+  setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
+  removeItem: (key: string) => AsyncStorage.removeItem(key),
 };
 
 export const supabase = createClient<Database>(supabaseUrl!, supabaseAnonKey!, {
   auth: {
-    storage: mmkvAuthStorage,
+    storage: asyncAuthStorage,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
