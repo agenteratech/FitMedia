@@ -137,16 +137,17 @@ export default function VoiceDietLogScreen() {
 
   const date = params.date ?? new Date().toISOString().slice(0, 10);
 
-  const [phase,     setPhase]     = useState<Phase>('idle');
-  const [mealType,  setMealType]  = useState<string>('breakfast');
-  const [duration,  setDuration]  = useState(0);
-  const [step,      setStep]      = useState('');
-  const [items,     setItems]     = useState<ReviewItem[]>([]);
-  const [saving,    setSaving]    = useState(false);
-  const [showAdd,   setShowAdd]   = useState(false);
-  const [addSearch, setAddSearch] = useState('');
-  const [addResults,setAddResults]= useState<{ id: string; name: string }[]>([]);
-  const [addLoading,setAddLoading]= useState(false);
+  const [phase,         setPhase]         = useState<Phase>('idle');
+  const [mealType,      setMealType]      = useState<string>('breakfast');
+  const [duration,      setDuration]      = useState(0);
+  const [step,          setStep]          = useState('');
+  const [items,         setItems]         = useState<ReviewItem[]>([]);
+  const [saving,        setSaving]        = useState(false);
+  const [showAdd,       setShowAdd]       = useState(false);
+  const [addSearch,     setAddSearch]     = useState('');
+  const [addResults,    setAddResults]    = useState<{ id: string; name: string }[]>([]);
+  const [addLoading,    setAddLoading]    = useState(false);
+  const [micPermission, setMicPermission] = useState<'loading' | 'granted' | 'denied'>('loading');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recordingRef = useRef<any>(null);
@@ -180,27 +181,53 @@ export default function VoiceDietLogScreen() {
     };
   }, [stopPulse]);
 
+  // Request mic permission immediately when the screen opens
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { Audio } = require('expo-av');
+        const { status } = await Audio.requestPermissionsAsync();
+        if (!cancelled) setMicPermission(status === 'granted' ? 'granted' : 'denied');
+      } catch {
+        if (!cancelled) setMicPermission('denied');
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Recording ─────────────────────────────────────────────────────────────
 
   const startRecording = useCallback(async () => {
-    // Lazy-require so a native module init failure doesn't blank the screen
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Audio } = require('expo-av');
-    const perm = await Audio.requestPermissionsAsync();
-    if (perm.status !== 'granted') {
-      Alert.alert('Permission Required', 'Microphone access is needed to record your meal.');
-      return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { Audio } = require('expo-av');
+      if (micPermission !== 'granted') {
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Microphone Access Required',
+            'Please enable microphone access in your device Settings to use voice logging.',
+          );
+          return;
+        }
+        setMicPermission('granted');
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+      recordingRef.current = recording;
+      setDuration(0);
+      setPhase('recording');
+      startPulse();
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Could not start recording. Please try again.');
     }
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY,
-    );
-    recordingRef.current = recording;
-    setDuration(0);
-    setPhase('recording');
-    startPulse();
-    timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
-  }, [startPulse]);
+  }, [startPulse, micPermission]);
 
   const stopAndProcess = useCallback(async () => {
     if (!recordingRef.current) return;
@@ -394,13 +421,24 @@ export default function VoiceDietLogScreen() {
           <Pressable
             onPress={startRecording}
             style={styles.micBtn}
+            disabled={micPermission === 'loading'}
             accessibilityLabel="Start recording"
           >
-            <View style={styles.micBtnInner}>
-              <Mic size={42} color={colors.surface} strokeWidth={1.75} />
+            <View style={[styles.micBtnInner, micPermission === 'denied' && styles.micBtnDenied]}>
+              {micPermission === 'loading'
+                ? <ActivityIndicator size="large" color={colors.surface} />
+                : <Mic size={42} color={colors.surface} strokeWidth={1.75} />}
             </View>
           </Pressable>
-          <Text style={styles.micHint}>Tap to start recording</Text>
+          {micPermission === 'denied' ? (
+            <Text style={styles.permDenied}>
+              Microphone access denied. Enable it in Settings to use voice logging.
+            </Text>
+          ) : (
+            <Text style={styles.micHint}>
+              {micPermission === 'loading' ? 'Requesting microphone access…' : 'Tap to start recording'}
+            </Text>
+          )}
           <Text style={styles.micExample}>
             Try: "200 grams chicken breast, a cup of rice and one tablespoon olive oil"
           </Text>
@@ -937,4 +975,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.surfaceElevBorder,
   } satisfies ViewStyle,
+
+  micBtnDenied: {
+    backgroundColor: colors.ink4,
+  } satisfies ViewStyle,
+
+  permDenied: {
+    ...(typography.caption as TextStyle),
+    color: colors.alert,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+  } satisfies TextStyle,
 });

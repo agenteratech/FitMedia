@@ -44,6 +44,12 @@
       "expo-font",
       "expo-updates",
       [
+        "expo-av",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for voice meal logging."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
