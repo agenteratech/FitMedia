@@ -147,7 +147,7 @@ export default function VoiceDietLogScreen() {
   const [addSearch,     setAddSearch]     = useState('');
   const [addResults,    setAddResults]    = useState<{ id: string; name: string }[]>([]);
   const [addLoading,    setAddLoading]    = useState(false);
-  const [micPermission, setMicPermission] = useState<'loading' | 'granted' | 'denied'>('loading');
+  const [micPermission, setMicPermission] = useState<'loading' | 'undetermined' | 'granted' | 'denied'>('loading');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recordingRef = useRef<any>(null);
@@ -181,17 +181,25 @@ export default function VoiceDietLogScreen() {
     };
   }, [stopPulse]);
 
-  // Request mic permission immediately when the screen opens
+  // Check mic permission status on mount WITHOUT showing a dialog.
+  // Requesting permission on mount (during the modal opening animation) causes
+  // native-level conflicts on Android that can crash the screen before it renders.
+  // The dialog is shown only when the user deliberately taps the mic button.
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { Audio } = require('expo-av');
-        const { status } = await Audio.requestPermissionsAsync();
-        if (!cancelled) setMicPermission(status === 'granted' ? 'granted' : 'denied');
+        const { status } = await Audio.getPermissionsAsync();
+        if (!cancelled) {
+          if (status === 'granted') setMicPermission('granted');
+          else if (status === 'denied') setMicPermission('denied');
+          else setMicPermission('undetermined'); // 'undetermined' — will ask on tap
+        }
       } catch {
-        if (!cancelled) setMicPermission('denied');
+        // expo-av unavailable or permission check failed — let user try tapping
+        if (!cancelled) setMicPermission('undetermined');
       }
     };
     run();
@@ -204,9 +212,12 @@ export default function VoiceDietLogScreen() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { Audio } = require('expo-av');
+      // Request permission here (on explicit user tap) so the dialog only appears
+      // when the user initiates recording, not when the screen first opens.
       if (micPermission !== 'granted') {
         const { status } = await Audio.requestPermissionsAsync();
         if (status !== 'granted') {
+          setMicPermission('denied');
           Alert.alert(
             'Microphone Access Required',
             'Please enable microphone access in your device Settings to use voice logging.',
@@ -436,7 +447,7 @@ export default function VoiceDietLogScreen() {
             </Text>
           ) : (
             <Text style={styles.micHint}>
-              {micPermission === 'loading' ? 'Requesting microphone access…' : 'Tap to start recording'}
+              {micPermission === 'loading' ? 'Checking microphone access…' : 'Tap to start recording'}
             </Text>
           )}
           <Text style={styles.micExample}>
