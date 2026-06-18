@@ -16,7 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg';
 import Slider from '@react-native-community/slider';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2, Copy, ChefHat } from 'lucide-react-native';
+import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2, Copy, ChefHat, Mic } from 'lucide-react-native';
 import { useCustomMeals, type CustomMeal, type IngredientDraft } from '../../hooks/useCustomMeals';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
 import { useDietLogs, type DietLog } from '../../hooks/useDietLogs';
@@ -300,6 +300,7 @@ export default function LogsScreen() {
             onAddFood={(mealType) => setAddFoodMealType(mealType)}
             onItemOptions={(entry) => setOptionsEntry(entry)}
             calorieTarget={calTarget}
+            onVoiceLog={() => router.push({ pathname: '/(modals)/voice-diet-log', params: { date: selectedYMD } })}
           />
         )}
         {segment === 'sleep' && (
@@ -507,6 +508,7 @@ function DietSegment({
   onAddFood,
   onItemOptions,
   calorieTarget,
+  onVoiceLog,
 }: {
   selectedDate: Date;
   selectedYMD: string;
@@ -518,6 +520,7 @@ function DietSegment({
   onAddFood: (mealType: string) => void;
   onItemOptions: (entry: DietLog) => void;
   calorieTarget: number;
+  onVoiceLog: () => void;
 }) {
   const ringOffset = CAL_CIRC * (1 - Math.min(totals.calories / calorieTarget, 1));
   const calPct = Math.round((totals.calories / calorieTarget) * 100);
@@ -564,6 +567,17 @@ function DietSegment({
           </View>
         </View>
       </Card>
+
+      {/* Voice Log button */}
+      <Pressable style={styles.voiceLogBtn} onPress={onVoiceLog}>
+        <View style={styles.voiceLogIcon}>
+          <Mic size={18} color={colors.accent} strokeWidth={1.75} />
+        </View>
+        <View style={styles.voiceLogText}>
+          <Text style={styles.voiceLogTitle}>Log Meal by Voice</Text>
+          <Text style={styles.voiceLogSub}>Speak your meal — AI extracts the nutrition</Text>
+        </View>
+      </Pressable>
 
       {/* Meal cards */}
       {MEAL_SECTIONS.map((section) => {
@@ -2174,6 +2188,35 @@ const styles = StyleSheet.create({
   dateNavBtn: { padding: spacing.sm } satisfies ViewStyle,
   dateNavDisabled: { opacity: 0.3 } satisfies ViewStyle,
   dateNavLabel: { ...(typography.bodyMedium as TextStyle) } satisfies TextStyle,
+
+  voiceLogBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.accent + '40',
+  } satisfies ViewStyle,
+  voiceLogIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } satisfies ViewStyle,
+  voiceLogText: { flex: 1 } satisfies ViewStyle,
+  voiceLogTitle: {
+    ...(typography.bodyMedium as TextStyle),
+    color: colors.accent,
+    marginBottom: 2,
+  } satisfies TextStyle,
+  voiceLogSub: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+  } satisfies TextStyle,
   calRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['2xl'] } satisfies ViewStyle,
   ringWrap: { width: CAL_SIZE, height: CAL_SIZE, position: 'relative', flexShrink: 0 } satisfies ViewStyle,
   ringCenter: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' } satisfies ViewStyle,
