@@ -27,20 +27,74 @@ export function useRoutines() {
   const fetch = useCallback(async () => {
     if (!user) { setLoading(false); return; }
     setLoading(true);
-    const { data, error: err } = await supabase
+    setError(null);
+
+    // ── Step 1: fetch routines ──────────────────────────────────────────────
+    const { data: routineRows, error: routineErr } = await supabase
       .from('user_routines')
-      .select(`
-        id, name, created_at,
-        user_routine_exercises(
-          id, exercise_id, order_index, default_sets, default_reps,
-          exercises(name, primary_muscles)
-        )
-      `)
+      .select('id, name, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
+
+    if (routineErr) {
+      setLoading(false);
+      setError(routineErr.message);
+      return;
+    }
+    if (!routineRows?.length) {
+      setLoading(false);
+      setItems([]);
+      return;
+    }
+
+    const routineIds = routineRows.map((r) => r.id);
+
+    // ── Step 2: fetch routine exercises ────────────────────────────────────
+    const { data: rexRows, error: rexErr } = await supabase
+      .from('user_routine_exercises')
+      .select('id, routine_id, exercise_id, order_index, default_sets, default_reps')
+      .in('routine_id', routineIds);
+
+    if (rexErr) {
+      setLoading(false);
+      setError(rexErr.message);
+      return;
+    }
+
+    // ── Step 3: fetch exercise details for all referenced exercise IDs ─────
+    const exerciseIds = [...new Set((rexRows ?? []).map((r) => r.exercise_id))];
+    let exerciseMap: Record<string, { name: string; primary_muscles: string | string[] | null }> = {};
+
+    if (exerciseIds.length > 0) {
+      const { data: exRows } = await supabase
+        .from('exercises')
+        .select('id, name, primary_muscles')
+        .in('id', exerciseIds);
+
+      exerciseMap = Object.fromEntries(
+        (exRows ?? []).map((ex) => [ex.id, { name: ex.name, primary_muscles: ex.primary_muscles }]),
+      );
+    }
+
+    // ── Step 4: merge ──────────────────────────────────────────────────────
+    const merged: RoutineItem[] = routineRows.map((routine) => ({
+      id: routine.id,
+      name: routine.name,
+      created_at: routine.created_at,
+      user_routine_exercises: (rexRows ?? [])
+        .filter((rex) => rex.routine_id === routine.id)
+        .map((rex) => ({
+          id: rex.id,
+          exercise_id: rex.exercise_id,
+          order_index: rex.order_index,
+          default_sets: rex.default_sets,
+          default_reps: rex.default_reps,
+          exercises: exerciseMap[rex.exercise_id] ?? null,
+        })),
+    }));
+
     setLoading(false);
-    if (err) { setError(err.message); return; }
-    setItems((data as RoutineItem[]) ?? []);
+    setItems(merged);
   }, [user]);
 
   useEffect(() => { fetch(); }, [fetch]);
