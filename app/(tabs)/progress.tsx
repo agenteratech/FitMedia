@@ -214,12 +214,16 @@ const chartWidth = screenW - CHART_H_OFFSET;
           <>
             <SectionHeader label="Insights" />
             <Card padding="default">
-              {score.insights.map((insight, i) => (
-                <View key={i} style={[styles.insightRow, i > 0 && styles.insightBorder]}>
-                  <Text style={styles.insightType}>{insight.type.toUpperCase()}</Text>
-                  <Text style={styles.insightMsg}>{insight.message}</Text>
-                </View>
-              ))}
+              {score.insights.map((insight: any, i) => {
+                const label = typeof insight === 'string' ? null : insight?.type?.toUpperCase() ?? null;
+                const msg   = typeof insight === 'string' ? insight : insight?.message ?? '';
+                return (
+                  <View key={i} style={[styles.insightRow, i > 0 && styles.insightBorder]}>
+                    {label ? <Text style={styles.insightType}>{label}</Text> : null}
+                    <Text style={styles.insightMsg}>{msg}</Text>
+                  </View>
+                );
+              })}
             </Card>
           </>
         )}

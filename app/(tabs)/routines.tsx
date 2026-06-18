@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   Alert,
+  ScrollView,
   StyleSheet,
   type ViewStyle,
   type TextStyle,
@@ -92,13 +93,13 @@ export default function RoutinesScreen() {
     const keywords = FILTER_MUSCLES[filter] ?? [];
     return orderedItems.filter((r) => {
       if (r.name.toLowerCase().includes(filter.toLowerCase())) return true;
-      return r.user_routine_exercises.some((rex) => {
+      return (r.user_routine_exercises ?? []).some((rex) => {
         const raw = rex.exercises?.primary_muscles;
         const muscles = (Array.isArray(raw) ? raw.join(' ') : (raw ?? '')).toLowerCase();
         return keywords.some((kw) => muscles.includes(kw));
       });
     });
-  }, [items, filter]);
+  }, [orderedItems, filter]);
 
   const handleStartRoutine = (routineId: string) => {
     const routine = items.find((r) => r.id === routineId);
@@ -107,7 +108,7 @@ export default function RoutinesScreen() {
     reset();
     setWorkoutType(routine.name);
     setStartedAt(new Date().toISOString());
-    [...routine.user_routine_exercises]
+    [...(routine.user_routine_exercises ?? [])]
       .sort((a, b) => a.order_index - b.order_index)
       .forEach((rex, idx) => {
         const defaultWeight = weightCache[`${routineId}_${rex.exercise_id}`] ?? 0;
@@ -127,7 +128,7 @@ export default function RoutinesScreen() {
   const routineToSummary = (r: typeof items[number]) => ({
     id: r.id,
     name: r.name,
-    exerciseNames: [...r.user_routine_exercises]
+    exerciseNames: [...(r.user_routine_exercises ?? [])]
       .sort((a, b) => a.order_index - b.order_index)
       .map((rex) => rex.exercises?.name ?? 'Unknown'),
   });
@@ -418,7 +419,7 @@ export default function RoutinesScreen() {
             {/* ── Explore Templates ─────────────────────────────── */}
             <Text style={styles.sectionLabel}>EXPLORE TEMPLATES</Text>
             <View style={styles.templateBreakout}>
-              <GHScrollView
+              <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.templateCardsRow}
@@ -443,7 +444,7 @@ export default function RoutinesScreen() {
                     </View>
                   </Pressable>
                 ))}
-              </GHScrollView>
+              </ScrollView>
             </View>
 
             {/* ── My Routines section header ─────────────────────── */}
