@@ -5,15 +5,12 @@ import {
   Pressable,
   Alert,
   ScrollView,
+  FlatList,
   StyleSheet,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import DraggableFlatList, {
-  ScaleDecorator,
-  type RenderItemParams,
-} from 'react-native-draggable-flatlist';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Dumbbell, Plus, Trash2, Pencil } from 'lucide-react-native';
@@ -139,21 +136,16 @@ export default function RoutinesScreen() {
     else refetch();
   };
 
-  // Drag-and-drop render item
   const renderRoutineItem = useCallback(
-    ({ item, drag, isActive }: RenderItemParams<RoutineItem>) => (
-      <ScaleDecorator activeScale={0.97}>
-        <View style={styles.draggableItem}>
-          <RoutineCard
-            routine={routineToSummary(item)}
-            onPress={() => router.push(`/(modals)/edit-routine?routineId=${item.id}`)}
-            onStart={() => handleStartRoutine(item.id)}
-            onMore={() => setSheetRoutineId(item.id)}
-            onDragStart={drag}
-            isDragging={isActive}
-          />
-        </View>
-      </ScaleDecorator>
+    ({ item }: { item: RoutineItem }) => (
+      <View style={styles.draggableItem}>
+        <RoutineCard
+          routine={routineToSummary(item)}
+          onPress={() => router.push(`/(modals)/edit-routine?routineId=${item.id}`)}
+          onStart={() => handleStartRoutine(item.id)}
+          onMore={() => setSheetRoutineId(item.id)}
+        />
+      </View>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, router],
@@ -392,25 +384,10 @@ export default function RoutinesScreen() {
         )}
       </Sheet>
 
-      {/* ── A single DraggableFlatList owns all vertical scrolling. ─── */}
-      {/* Using NestableScrollContainer + NestableDraggableFlatList     */}
-      {/* caused the outer and inner scroll containers to fight over     */}
-      {/* gestures, making both scroll and drag feel glitchy. With one  */}
-      {/* DraggableFlatList the gesture system has no ambiguity.        */}
-      <DraggableFlatList
+      <FlatList
         data={filtered}
         keyExtractor={(r) => r.id}
         renderItem={renderRoutineItem}
-        onDragEnd={({ data }) => {
-          if (filter === 'All' || filter === 'Full Body') {
-            setOrder(data.map((r) => r.id));
-          }
-        }}
-        // Drag via the grip handle uses onLongPress, so activationDistance
-        // only needs to cover noise after the long-press fires. 20 px is
-        // enough to feel intentional without slowing down the drag start.
-        // Disable drag entirely when a filter is active (order would be confusing).
-        activationDistance={filter === 'All' || filter === 'Full Body' ? 20 : 99999}
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
