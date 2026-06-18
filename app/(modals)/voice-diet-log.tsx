@@ -16,8 +16,6 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
 import { ChevronLeft, Mic, MicOff, Plus, Search, Trash2, Zap } from 'lucide-react-native';
 import { extractFoodsFromAudio } from '../../lib/voice/geminiSpeech';
 import {
@@ -150,7 +148,8 @@ export default function VoiceDietLogScreen() {
   const [addResults,setAddResults]= useState<{ id: string; name: string }[]>([]);
   const [addLoading,setAddLoading]= useState(false);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recordingRef = useRef<any>(null);
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim    = useRef(new Animated.Value(1)).current;
   const pulseLoop    = useRef<Animated.CompositeAnimation | null>(null);
@@ -184,6 +183,9 @@ export default function VoiceDietLogScreen() {
   // ── Recording ─────────────────────────────────────────────────────────────
 
   const startRecording = useCallback(async () => {
+    // Lazy-require so a native module init failure doesn't blank the screen
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Audio } = require('expo-av');
     const perm = await Audio.requestPermissionsAsync();
     if (perm.status !== 'granted') {
       Alert.alert('Permission Required', 'Microphone access is needed to record your meal.');
@@ -213,6 +215,8 @@ export default function VoiceDietLogScreen() {
       if (!uri) throw new Error('No audio recorded');
 
       setStep('Listening to your voice…');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const FileSystem = require('expo-file-system');
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
