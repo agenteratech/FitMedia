@@ -159,6 +159,13 @@ export default function HomeScreen() {
   const companion = useCompanion();
   const [showCompanionSheet, setShowCompanionSheet] = useState(false);
 
+  // Persist "tutorial seen" to MMKV the moment it first appears so a
+  // force-quit before the notification step doesn't re-show the tutorial.
+  useEffect(() => {
+    if (!companion.tutorialSeen) companion.persistTutorialSeen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Leaderboard
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const { entries: lbEntries, currentUser: lbCurrentUser, loading: lbLoading, error: lbError } = useLeaderboard(50);

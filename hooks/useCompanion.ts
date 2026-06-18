@@ -42,6 +42,14 @@ export function useCompanion() {
   const [notificationsGranted, setNotificationsGrantedState] = useState(() => readBool(storageKeys.notificationsGranted, false));
   const [categories,         setCategoriesState]         = useState<Record<NotifCategory, boolean>>(readCategories);
 
+  const persistTutorialSeen = useCallback(() => {
+    // Write to disk only — does NOT update React state, so the tutorial
+    // stays visible for the rest of this session. This is called as soon
+    // as the tutorial first appears so that a force-quit before the user
+    // taps "Maybe Later" still suppresses the tutorial on next cold start.
+    storage.set(storageKeys.companionTutorialSeen, 'true');
+  }, []);
+
   const markTutorialSeen = useCallback(() => {
     storage.set(storageKeys.companionTutorialSeen, 'true');
     setTutorialSeenState(true);
@@ -87,6 +95,7 @@ export function useCompanion() {
 
   return {
     tutorialSeen,
+    persistTutorialSeen,
     markTutorialSeen,
     replayTutorial,
     enabled,

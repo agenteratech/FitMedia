@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { BackHandler, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
+import { BackHandler, StyleSheet, View, type ViewStyle, type StyleProp } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -96,10 +96,19 @@ export function Sheet({ visible, onClose, snapPoints, children, scrollable, scro
         >
           {children}
         </BottomSheetScrollView>
-      ) : (
-        <BottomSheetView style={useDynamic ? undefined : styles.fill}>
+      ) : useDynamic ? (
+        <BottomSheetView>
           {children}
         </BottomSheetView>
+      ) : (
+        // Plain View (not BottomSheetView) for fixed snap-point sheets.
+        // BottomSheetView adds its own pan gesture detector which conflicts
+        // with any BottomSheetScrollView rendered by children — the sheet's
+        // gesture swallows scroll events. A plain View avoids that conflict
+        // while still filling the snap-point height via flex:1.
+        <View style={styles.fill}>
+          {children}
+        </View>
       )}
     </BottomSheetModal>
   );
