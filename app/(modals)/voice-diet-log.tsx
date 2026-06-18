@@ -127,9 +127,43 @@ async function lookupNutrition(
   }
 }
 
+/**
+ * Safely load the expo-av Audio API.
+ *
+ * `require` is wrapped in try/catch because the native module may be absent in
+ * a given binary (e.g. an older build made before expo-av was added). Returning
+ * null lets the UI degrade gracefully instead of throwing an uncatchable error.
+ *
+ * IMPORTANT: this is NEVER called during render or on mount — only inside the
+ * user-initiated record handler. Keeping native audio out of the open/mount
+ * path guarantees the screen always renders and the Back button stays usable.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loadAudio(): any | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const av = require('expo-av');
+    return av?.Audio ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read a file as base64 using the SDK 54 legacy FileSystem API. */
+async function readFileAsBase64(uri: string): Promise<string> {
+  // expo-file-system v19 (SDK 54) moved readAsStringAsync/EncodingType to the
+  // `/legacy` entry point. The default export is the new File/Directory API and
+  // does NOT have these, so importing from the root would throw at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const FileSystem = require('expo-file-system/legacy');
+  return FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+}
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
-export default function VoiceDietLogScreen() {
+function VoiceDietLogScreenInner() {
   const router  = useRouter();
   const params  = useLocalSearchParams<{ date?: string }>();
   const { user } = useAuthStore();
@@ -147,7 +181,10 @@ export default function VoiceDietLogScreen() {
   const [addSearch,     setAddSearch]     = useState('');
   const [addResults,    setAddResults]    = useState<{ id: string; name: string }[]>([]);
   const [addLoading,    setAddLoading]    = useState(false);
-  const [micPermission, setMicPermission] = useState<'loading' | 'undetermined' | 'granted' | 'denied'>('loading');
+  // Starts 'undetermined' — we do NOT probe permissions on mount. The first
+  // (and only) native audio call happens when the user taps the mic button.
+  const [micPermission, setMicPermission] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
+  const [audioUnavailable, setAudioUnavailable] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recordingRef = useRef<any>(null);
@@ -181,51 +218,38 @@ export default function VoiceDietLogScreen() {
     };
   }, [stopPulse]);
 
-  // Check mic permission status on mount WITHOUT showing a dialog.
-  // Requesting permission on mount (during the modal opening animation) causes
-  // native-level conflicts on Android that can crash the screen before it renders.
-  // The dialog is shown only when the user deliberately taps the mic button.
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { Audio } = require('expo-av');
-        const { status } = await Audio.getPermissionsAsync();
-        if (!cancelled) {
-          if (status === 'granted') setMicPermission('granted');
-          else if (status === 'denied') setMicPermission('denied');
-          else setMicPermission('undetermined'); // 'undetermined' — will ask on tap
-        }
-      } catch {
-        // expo-av unavailable or permission check failed — let user try tapping
-        if (!cancelled) setMicPermission('undetermined');
-      }
-    };
-    run();
-    return () => { cancelled = true; };
-  }, []);
-
   // ── Recording ─────────────────────────────────────────────────────────────
+  //
+  // All native audio access lives here, behind an explicit user tap. expo-av is
+  // loaded lazily and defensively: if the native module is missing from the
+  // installed binary, we surface a clear message instead of letting an
+  // uncatchable native error freeze the screen.
 
   const startRecording = useCallback(async () => {
+    const Audio = loadAudio();
+    if (!Audio) {
+      setAudioUnavailable(true);
+      Alert.alert(
+        'Voice Logging Unavailable',
+        'The audio engine is missing from this build. Please update to the latest version of the app, then try again.',
+      );
+      return;
+    }
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Audio } = require('expo-av');
-      // Request permission here (on explicit user tap) so the dialog only appears
-      // when the user initiates recording, not when the screen first opens.
-      if (micPermission !== 'granted') {
-        const { status } = await Audio.requestPermissionsAsync();
-        if (status !== 'granted') {
-          setMicPermission('denied');
-          Alert.alert(
-            'Microphone Access Required',
-            'Please enable microphone access in your device Settings to use voice logging.',
-          );
-          return;
-        }
-        setMicPermission('granted');
+      // Request permission on tap so the dialog only appears when the user
+      // deliberately starts recording — never during the open animation.
+      const perm = await Audio.requestPermissionsAsync();
+      if (perm.status !== 'granted') {
+        setMicPermission('denied');
+        Alert.alert(
+          'Microphone Access Required',
+          perm.canAskAgain === false
+            ? 'Microphone access is blocked. Enable it in your device Settings to use voice logging.'
+            : 'Please allow microphone access to use voice logging.',
+        );
+        return;
       }
+      setMicPermission('granted');
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
@@ -236,9 +260,10 @@ export default function VoiceDietLogScreen() {
       startPulse();
       timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
     } catch (err: any) {
+      setPhase('idle');
       Alert.alert('Error', err?.message ?? 'Could not start recording. Please try again.');
     }
-  }, [startPulse, micPermission]);
+  }, [startPulse]);
 
   const stopAndProcess = useCallback(async () => {
     if (!recordingRef.current) return;
@@ -253,11 +278,7 @@ export default function VoiceDietLogScreen() {
       if (!uri) throw new Error('No audio recorded');
 
       setStep('Listening to your voice…');
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const FileSystem = require('expo-file-system');
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      const base64 = await readFileAsBase64(uri);
 
       setStep('Extracting food items…');
       const extracted = await extractFoodsFromAudio(base64, 'audio/m4a');
@@ -432,23 +453,26 @@ export default function VoiceDietLogScreen() {
           <Pressable
             onPress={startRecording}
             style={styles.micBtn}
-            disabled={micPermission === 'loading'}
+            disabled={audioUnavailable}
             accessibilityLabel="Start recording"
           >
-            <View style={[styles.micBtnInner, micPermission === 'denied' && styles.micBtnDenied]}>
-              {micPermission === 'loading'
-                ? <ActivityIndicator size="large" color={colors.surface} />
-                : <Mic size={42} color={colors.surface} strokeWidth={1.75} />}
+            <View style={[
+              styles.micBtnInner,
+              (micPermission === 'denied' || audioUnavailable) && styles.micBtnDenied,
+            ]}>
+              <Mic size={42} color={colors.surface} strokeWidth={1.75} />
             </View>
           </Pressable>
-          {micPermission === 'denied' ? (
+          {audioUnavailable ? (
+            <Text style={styles.permDenied}>
+              Voice logging needs the latest app version. Please update the app, then try again.
+            </Text>
+          ) : micPermission === 'denied' ? (
             <Text style={styles.permDenied}>
               Microphone access denied. Enable it in Settings to use voice logging.
             </Text>
           ) : (
-            <Text style={styles.micHint}>
-              {micPermission === 'loading' ? 'Checking microphone access…' : 'Tap to start recording'}
-            </Text>
+            <Text style={styles.micHint}>Tap to start recording</Text>
           )}
           <Text style={styles.micExample}>
             Try: "200 grams chicken breast, a cup of rice and one tablespoon olive oil"
@@ -592,6 +616,63 @@ export default function VoiceDietLogScreen() {
         </KeyboardAvoidingView>
       )}
     </SafeAreaView>
+  );
+}
+
+// ─── Error boundary ────────────────────────────────────────────────────────────
+//
+// A render-time error anywhere in the screen would otherwise unmount the whole
+// tree and leave a frozen black surface in a release/preview build (no red box).
+// This boundary catches that and shows a recoverable fallback with a working
+// Back button, so the screen can never trap the user.
+
+function VoiceErrorFallback() {
+  const router = useRouter();
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
+        <ChevronLeft size={22} color={colors.ink2} strokeWidth={1.75} />
+        <Text style={styles.backLabel}>Back</Text>
+      </Pressable>
+      <View style={[styles.centerContent, styles.centerFlex]}>
+        <Card padding="comfortable" style={styles.mealTypeCard}>
+          <Text style={styles.screenTitle}>Voice Logging Unavailable</Text>
+          <Text style={styles.screenSub}>
+            Something went wrong opening voice logging. You can still add food
+            manually from the Diet screen.
+          </Text>
+          <Button label="Back to Diet" fullWidth onPress={() => router.back()} />
+        </Card>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+class VoiceErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn('[voice-diet-log] render error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) return <VoiceErrorFallback />;
+    return this.props.children;
+  }
+}
+
+export default function VoiceDietLogScreen() {
+  return (
+    <VoiceErrorBoundary>
+      <VoiceDietLogScreenInner />
+    </VoiceErrorBoundary>
   );
 }
 
