@@ -20,21 +20,31 @@ class MemoryStorage implements StorageLike {
   }
 }
 
-const createStorage = (): StorageLike => {
+let _storageInstance: StorageLike | null = null;
+
+function getStorageInstance(): StorageLike {
+  if (_storageInstance !== null) return _storageInstance;
   try {
     const { MMKV } = require('react-native-mmkv') as {
       MMKV: new () => StorageLike;
     };
-    return new MMKV();
+    _storageInstance = new MMKV();
   } catch (error) {
-    // Always log this — falling back to MemoryStorage means the session is never
-    // written to disk, so the user gets logged out on every cold restart.
+    // Falling back to MemoryStorage means values are not written to disk.
+    // The user will lose persistent state on every cold restart.
     console.error('[Storage] MMKV failed to initialise; falling back to in-memory storage. Session will NOT persist across app restarts.', error);
-    return new MemoryStorage();
+    _storageInstance = new MemoryStorage();
   }
-};
+  return _storageInstance;
+}
 
-export const storage = createStorage();
+// Lazy proxy — defers MMKV initialisation to first use so the native module
+// is guaranteed to be ready (avoids "initialized before JSI is bound" crashes).
+export const storage: StorageLike = {
+  getString: (key) => getStorageInstance().getString(key),
+  set:       (key, value) => getStorageInstance().set(key, value),
+  delete:    (key) => getStorageInstance().delete(key),
+};
 
 export const storageKeys = {
   exercises: 'exercise_cache_v1',

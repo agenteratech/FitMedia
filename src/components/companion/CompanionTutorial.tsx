@@ -139,6 +139,7 @@ export function CompanionTutorial({ visible, personality, categories, onComplete
       transparent
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={() => onComplete(false)}
     >
       <View style={styles.backdrop}>
         {/* Animated card */}
