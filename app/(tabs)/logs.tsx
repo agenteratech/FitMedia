@@ -45,6 +45,7 @@ import {
   Chip,
   Sheet,
 } from '../../src/components/primitives';
+import { VoiceLogSheet } from '../../src/components/VoiceLogSheet';
 import { colors, spacing, typography, numericStyle, radius } from '../../src/theme';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -200,6 +201,7 @@ export default function LogsScreen() {
   // Sheet state
   const [addFoodMealType, setAddFoodMealType] = useState<string | null>(null);
   const [logSleepOpen, setLogSleepOpen] = useState(false);
+  const [voiceLogOpen, setVoiceLogOpen] = useState(false);
   const [optionsEntry, setOptionsEntry] = useState<DietLog | null>(null);
   const [editingEntry, setEditingEntry] = useState<DietLog | null>(null);
 
@@ -300,7 +302,7 @@ export default function LogsScreen() {
             onAddFood={(mealType) => setAddFoodMealType(mealType)}
             onItemOptions={(entry) => setOptionsEntry(entry)}
             calorieTarget={calTarget}
-            onVoiceLog={() => router.push({ pathname: '/(modals)/voice-diet-log', params: { date: selectedYMD } })}
+            onVoiceLog={() => setVoiceLogOpen(true)}
           />
         )}
         {segment === 'sleep' && (
@@ -405,6 +407,15 @@ export default function LogsScreen() {
         userId={user?.id ?? ''}
         onClose={() => setLogSleepOpen(false)}
         onSaved={() => setLogSleepOpen(false)}
+      />
+
+      {/* Voice meal logging sheet */}
+      <VoiceLogSheet
+        visible={voiceLogOpen}
+        date={selectedYMD}
+        userId={user?.id ?? ''}
+        onClose={() => setVoiceLogOpen(false)}
+        onSaved={() => { setVoiceLogOpen(false); refetchDiet(); }}
       />
 
       {/* Calendar picker */}
