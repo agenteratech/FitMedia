@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle } from 'react-native-svg';
 import Slider from '@react-native-community/slider';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Calendar, Dumbbell, Moon, ChevronLeft, ChevronRight, Plus, X, Search, Repeat2, Zap, MoreHorizontal, Pencil, Trash2, Copy, ChefHat, Mic } from 'lucide-react-native';
 import { useCustomMeals, type CustomMeal, type IngredientDraft } from '../../hooks/useCustomMeals';
 import { useWorkoutHistory } from '../../hooks/useWorkoutHistory';
@@ -927,7 +928,7 @@ function SearchFoodView({
         )}
       </View>
 
-      <ScrollView
+      <BottomSheetScrollView
         style={styles.searchResults}
         contentContainerStyle={styles.searchResultsInner}
         keyboardShouldPersistTaps="handled"
@@ -965,7 +966,7 @@ function SearchFoodView({
           <Plus size={14} color={colors.accent} strokeWidth={1.75} />
           <Text style={styles.manualEntryLabel}>Can't find it? Enter manually</Text>
         </Pressable>
-      </ScrollView>
+      </BottomSheetScrollView>
     </View>
   );
 }
@@ -1067,7 +1068,7 @@ function FoodDetailView({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+    <BottomSheetScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
       {/* Weight selector */}
       <View>
         <Text style={styles.sheetFieldLabel}>Weight ({unit})</Text>
@@ -1118,7 +1119,7 @@ function FoodDetailView({
         disabled={saving || weightNum <= 0}
         onPress={handleSave}
       />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
@@ -1174,7 +1175,7 @@ function ManualFoodView({
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+    <BottomSheetScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
       <Input label="Description (optional)" value={description} onChangeText={setDescription} autoCapitalize="sentences" />
       <Input label="Calories (kcal)" value={calories} onChangeText={setCalories} keyboardType="decimal-pad" />
       <View style={styles.macroRow}>
@@ -1190,7 +1191,7 @@ function ManualFoodView({
       </View>
       {error ? <Text style={styles.sheetError}>{error}</Text> : null}
       <Button label={saving ? 'Saving…' : `Add to ${mealLabel}`} fullWidth disabled={saving} onPress={handleSave} />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
@@ -1262,7 +1263,7 @@ function MyMealsView({
   }
 
   return (
-    <ScrollView
+    <BottomSheetScrollView
       style={ms.scroll}
       contentContainerStyle={ms.scrollContent}
       keyboardShouldPersistTaps="handled"
@@ -1323,7 +1324,7 @@ function MyMealsView({
           onDeleteMeal(meal);
         }}
       />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
@@ -1460,7 +1461,7 @@ function IngredientDetailForMeal({
   );
 
   return (
-    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+    <BottomSheetScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
       <View>
         <Text style={styles.sheetFieldLabel}>Weight ({unit})</Text>
         <View style={styles.weightRow}>
@@ -1507,7 +1508,7 @@ function IngredientDetailForMeal({
           sort_order: 0,
         })}
       />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
@@ -1527,7 +1528,7 @@ function IngredientManualForm({
   const [fat, setFat] = useState(() => editDraft ? String(editDraft.fat_g) : '');
 
   return (
-    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+    <BottomSheetScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
       <Input label="Food name" value={name} onChangeText={setName} autoCapitalize="sentences" autoFocus />
       <Input label={`Quantity (${unit})`} value={qty} onChangeText={setQty} keyboardType="decimal-pad" />
       <View>
@@ -1555,7 +1556,7 @@ function IngredientManualForm({
           onAdd({ food_name: name.trim(), quantity: Number(qty) || 100, unit, calories: Number(cals) || 0, protein_g: Number(protein) || 0, carbs_g: Number(carbs) || 0, fat_g: Number(fat) || 0, sort_order: 0 });
         }}
       />
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
@@ -1668,7 +1669,7 @@ function CustomMealBuilderSheet({
 
       {/* Main meal list view */}
       {ingMode === 'list' && (
-        <ScrollView contentContainerStyle={mb.listScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView contentContainerStyle={mb.listScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Input label="Meal Name" value={mealName} onChangeText={setMealName} autoCapitalize="words" />
 
           {ingredients.length > 0 && (
@@ -1736,7 +1737,7 @@ function CustomMealBuilderSheet({
             disabled={saving || !mealName.trim()}
             onPress={handleSaveMeal}
           />
-        </ScrollView>
+        </BottomSheetScrollView>
       )}
 
       {/* Ingredient search (re-uses existing FatSecret search view) */}
@@ -1873,7 +1874,7 @@ function EditFoodSheet({
           <X size={20} color={colors.ink2} strokeWidth={1.75} />
         </Pressable>
       </View>
-      <ScrollView
+      <BottomSheetScrollView
         contentContainerStyle={styles.sheetBody}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -1908,7 +1909,7 @@ function EditFoodSheet({
           disabled={saving}
           onPress={handleSave}
         />
-      </ScrollView>
+      </BottomSheetScrollView>
     </Sheet>
   );
 }
