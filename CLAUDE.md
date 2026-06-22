@@ -8,7 +8,7 @@ Complete technical documentation for the FitMedia codebase. Read this before mak
 
 FitMedia is a fitness RPG tracking app built with Expo (React Native). Users log workouts, diet, and sleep; a scoring engine converts activity into 0–100 scores per category (Workout, Diet, Sleep) and a composite "Body Score." The app tracks progress over time with charts, per-muscle-group breakdowns, and insights.
 
-**Stack summary:** Expo 54 · React Native 0.81 · React 19 · Expo Router v4 (file-based) · Supabase (Postgres + Auth) · Zustand v5 · MMKV · @gorhom/bottom-sheet v5 · react-native-svg · react-native-reanimated v4
+**Stack summary:** Expo 54 · React Native 0.81 · React 19 · Expo Router v4 (file-based) · Supabase (Postgres + Auth) · Zustand v5 · MMKV · @gorhom/bottom-sheet v5 · react-native-svg · react-native-reanimated v4 · expo-audio (voice logging) · Gemini 2.5 Flash (AI extraction)
 
 ---
 
@@ -26,6 +26,7 @@ c:\fitmedia\
 │   │   ├── progress.tsx         # Progress analytics
 │   │   └── profile.tsx          # User profile & stats editor
 │   ├── (modals)/
+│   │   ├── _layout.tsx          # Modal stack config (presentation: modal)
 │   │   ├── active-workout.tsx   # In-progress workout screen
 │   │   ├── finish-workout.tsx   # Post-workout summary
 │   │   ├── create-routine.tsx   # Routine builder
@@ -41,22 +42,26 @@ c:\fitmedia\
 │       └── character-reveal.tsx
 ├── src/
 │   └── components/
-│       └── primitives/          # Reusable UI atoms
-│           ├── Sheet.tsx
-│           ├── Button.tsx
-│           ├── Card.tsx
-│           ├── Input.tsx
-│           ├── SegmentedControl.tsx
-│           ├── Chip.tsx
-│           ├── WeekStrip.tsx
-│           ├── RoutineCard.tsx
-│           ├── ExerciseCard.tsx
-│           ├── SetRow.tsx
-│           ├── ExerciseThumbnail.tsx
-│           ├── FloatingTabBar.tsx
-│           ├── TimerIsland.tsx
-│           ├── DayPill.tsx
-│           └── SnackBar.tsx
+│       ├── primitives/          # Reusable UI atoms
+│       │   ├── Sheet.tsx
+│       │   ├── Button.tsx
+│       │   ├── Card.tsx
+│       │   ├── Input.tsx
+│       │   ├── SegmentedControl.tsx
+│       │   ├── Chip.tsx
+│       │   ├── WeekStrip.tsx
+│       │   ├── RoutineCard.tsx
+│       │   ├── ExerciseCard.tsx
+│       │   ├── SetRow.tsx
+│       │   ├── ExerciseThumbnail.tsx
+│       │   ├── FloatingTabBar.tsx
+│       │   ├── TimerIsland.tsx
+│       │   ├── DayPill.tsx
+│       │   └── SnackBar.tsx
+│       ├── VoiceLogSheet.tsx    # Bottom sheet wrapper for voice meal logging
+│       ├── VoiceLogBody.tsx     # Voice recording + Gemini extraction + review UI
+│       └── companion/
+│           └── CompanionTutorial.tsx  # AI companion onboarding carousel
 ├── hooks/
 │   ├── useDailyScore.ts
 │   ├── useWorkoutHistory.ts
@@ -68,7 +73,11 @@ c:\fitmedia\
 │   ├── useAutoFill.ts
 │   ├── usePRDetection.ts
 │   ├── useScoreHistory.ts
-│   └── useProgressStats.ts
+│   ├── useProgressStats.ts
+│   ├── useCompanion.ts          # AI companion state + notification prefs
+│   ├── useCustomMeals.ts        # Custom meal templates CRUD
+│   ├── useLeaderboard.ts        # Streak leaderboard with real-time sync
+│   └── useStreak.ts             # Workout streak calculation
 ├── stores/
 │   ├── authStore.ts
 │   ├── workoutStore.ts
@@ -77,8 +86,19 @@ c:\fitmedia\
 ├── lib/
 │   ├── supabase.ts              # Supabase client
 │   ├── storage.ts               # MMKV wrapper
-│   └── fatsecret/
-│       └── client.ts            # FatSecret food API client
+│   ├── fatsecret/
+│   │   └── client.ts            # FatSecret food API client
+│   ├── voice/
+│   │   ├── geminiSpeech.ts      # Audio → food extraction via Gemini 2.5 Flash
+│   │   └── nutrition.ts         # FatSecret nutrition lookup + unit scaling
+│   └── diet/
+│       └── saveDietLog.ts       # Unified diet log insert/update helper
+├── supabase/
+│   ├── functions/
+│   │   └── calculate-scores/    # Edge function: recomputes daily_scores
+│   └── migrations/
+│       ├── 004_initial_strength.sql  # Baseline strength test results table
+│       └── 005_user_streaks.sql      # Public leaderboard streak table
 ├── constants/
 │   └── colors.ts                # Color palette
 ├── theme/
@@ -204,6 +224,8 @@ Expo Router v4 file-based routing. The scheme is `fitnessrpg://`.
 /onboarding/character-reveal
 ```
 
+Note: Voice logging and leaderboard are **bottom sheets**, not modal routes — they open as sheets within the tabs screens.
+
 ### Auth gate (app/_layout.tsx)
 
 ```
@@ -237,14 +259,15 @@ Fonts loaded?
 
 ### 5.1 Home (`app/(tabs)/home.tsx`)
 
-Data sources: `useDailyScore`, `useBodyPartScores`, `useWorkoutHistory`, `useSleepLogs`, `useDietLogs`, `useRoutines`
+Data sources: `useDailyScore`, `useBodyPartScores`, `useWorkoutHistory`, `useSleepLogs`, `useDietLogs`, `useRoutines`, `useStreak`, `useLeaderboard`, `useCompanion`
 
 Layout (scroll):
-- **Header** — greeting (time of day) + today's date
+- **Header** — greeting (time of day) + today's date + trophy button (leaderboard) + companion avatar button (if enabled)
 - **Body Score ring** — animated SVG ring using `Animated.createAnimatedComponent(Circle)`, `useNativeDriver: false` (SVG can't use native driver), 1100ms ease-in-out, 250ms delay
   - Ring constants: `RING_SIZE=136`, `RING_STROKE=11`, `RING_R=(136-11)/2`, `RING_CIRC=2π×RING_R`
   - `strokeDashoffset` animates from `RING_CIRC` (empty) to `RING_CIRC * (1 - score/100)`
-- **Body part chips** — horizontal scroll, 5 muscle groups, color-coded
+- **Body part chips** — horizontal scroll, muscle groups, color-coded
+- **Streak card** — flame icon, current session streak count, best-streak badge; shows "No active streak" when `current = 0`; powered by `useStreak()`
 - **Today's sub-scores** — Workout / Diet / Sleep rows with colored bars
 - **Quick actions** — Log Workout, Log Food, Log Sleep
 - **Up Next** — first routine in library; start button wires into `workoutStore` then navigates to `/(modals)/active-workout?mode=routine&routineId=...`
@@ -252,6 +275,8 @@ Layout (scroll):
 - **Today's nutrition** — calorie count + macro pills from `useDietLogs(today)`
 - **Last night's sleep** — duration + quality from `useSleepLogs`
 - **Insights** — text fields from `daily_scores.insights`
+- **Leaderboard sheet** — triggered by trophy button; shows top 50 users by streak with medal icons for top 3 (gold/silver/bronze) and current user's rank if not in top list; real-time via Supabase subscription
+- **CompanionTutorial** — shown once on first open; multi-step carousel; requests notification permission; persists `companionTutorialSeen` to MMKV on first render to survive force-quit
 
 ### 5.2 Logs (`app/(tabs)/logs.tsx`)
 
@@ -270,7 +295,9 @@ Layout (scroll):
 - Macro breakdown (Protein/Carbs/Fat) as colored bars
 - Meal sections: breakfast / lunch / dinner / snack
 - Add food button per meal → opens `AddFoodSheet`
-- `AddFoodSheet`: always-mounted with `visible` prop; search debounced 300ms via FatSecret API; tap result to see detail with weight slider; Save logs to `diet_logs`
+- `AddFoodSheet`: always-mounted with `visible` prop; tabs: Search | My Meals; search debounced 300ms via FatSecret API; tap result to see detail with weight slider; Save logs to `diet_logs` via `saveDietLog`; "My Meals" tab shows recent then all custom meals with Log / Duplicate / Delete options
+- **Voice Log button** — mic icon button in Diet segment header; opens `VoiceLogSheet`; uses `expo-audio` + Gemini 2.5 Flash to extract foods from speech
+- **Custom Meal Builder** — opened from "My Meals" tab; search FatSecret or add manually; add/edit/remove ingredients; save as reusable template via `useCustomMeals`
 - Manual entry fallback when no results
 
 **Sleep segment:**
@@ -280,7 +307,7 @@ Layout (scroll):
 - Log Sleep button → opens `LogSleepSheet`
 - `LogSleepSheet`: always-mounted with `visible` prop; hours slider (0–12h step 0.5); quality chips (Poor/Fair/Good/Excellent); Save inserts to `sleep_logs`
 
-**Sheet pattern:** Both `AddFoodSheet` and `LogSleepSheet` are always-mounted in the render tree with a `visible` boolean prop. The `Sheet` primitive calls `ref.current?.present()` / `ref.current?.dismiss()` imperatively. Do **not** conditionally render them (`{condition && <Sheet>}`) — that breaks the animation lifecycle.
+**Sheet pattern:** `AddFoodSheet`, `LogSleepSheet`, and `VoiceLogSheet` are always-mounted in the render tree with a `visible` boolean prop. The `Sheet` primitive calls `ref.current?.present()` / `ref.current?.dismiss()` imperatively. Do **not** conditionally render them (`{condition && <Sheet>}`) — that breaks the animation lifecycle.
 
 ### 5.3 Routines (`app/(tabs)/routines.tsx`)
 
@@ -492,6 +519,97 @@ const workouts = ((workoutsRes.data ?? []) as unknown) as {
 
 Returns `{ stats: ProgressStats, loading }`.
 
+### useStreak
+
+Calculates current and longest workout streaks from last 180 days of `workouts`.
+
+**Key algorithm** — infers allowed rest-day gap from 90th-percentile gap between workout days:
+- Daily trainer → 1-day grace (floor: 2 days)
+- 5-2 split → ~3-day weekend tolerance (ceiling: 4 days)
+
+Syncs results to public `user_streaks` table (fire-and-forget upsert) for leaderboard.
+
+```typescript
+export interface StreakResult {
+  current: number;           // active streak (0 if broken)
+  longest: number;           // all-time best
+  lastWorkoutDate: string | null;
+  loading: boolean;
+}
+```
+
+Returns `StreakResult`.
+
+### useLeaderboard(limit?: number)
+
+Fetches top N users from `user_streaks` ranked by `current_streak` (tiebreaker: `longest_streak`). Subscribes to Supabase real-time channel for live updates. Determines current user's rank if not in top list.
+
+```typescript
+export interface LeaderboardEntry {
+  userId: string;
+  displayName: string;
+  currentStreak: number;
+  longestStreak: number;
+  rank: number;
+  isCurrentUser: boolean;
+}
+
+export interface LeaderboardResult {
+  entries: LeaderboardEntry[];
+  currentUser: LeaderboardEntry | null;  // null if already in entries
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+}
+```
+
+Returns `LeaderboardResult`.
+
+### useCustomMeals
+
+CRUD for user-created meal templates stored in `custom_meals` + `custom_meal_ingredients`. Tracks recently-used meals by querying `diet_logs.custom_meal_id`.
+
+```typescript
+export type CustomMeal = {
+  id: string;
+  user_id: string;
+  name: string;
+  total_calories: number;
+  total_protein_g: number;
+  total_carbs_g: number;
+  total_fat_g: number;
+  created_at: string;
+  updated_at: string;
+  ingredients: CustomMealIngredient[];
+};
+
+export type CustomMealIngredient = {
+  id: string;
+  meal_id: string;
+  food_name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  sort_order: number;
+};
+```
+
+Returns `{ meals, recentMeals, loading, error, refetch, createMeal, updateMeal, deleteMeal, duplicateMeal }`.
+
+### useCompanion
+
+Manages AI companion state persisted to MMKV. Handles tutorial lifecycle (persists `companionTutorialSeen` on first render, not just on completion, to survive force-quit before tutorial finishes).
+
+```typescript
+type Personality = 'friendly' | 'motivational' | 'strict' | 'playful';
+type NotifCategory = 'workout' | 'diet' | 'sleep' | 'streak';
+```
+
+Returns `{ tutorialSeen, persistTutorialSeen, markTutorialSeen, replayTutorial, enabled, setEnabled, personality, setPersonality, notificationsGranted, setNotificationsGranted, categories, setCategory }`.
+
 ---
 
 ## 9. Primitives
@@ -687,6 +805,63 @@ const display = Array.isArray(raw) ? raw.join(', ') : (raw ?? '');
 | `carbs_g` | numeric | |
 | `fat_g` | numeric | |
 | `weight_g` | numeric | serving weight |
+| `custom_meal_id` | uuid FK → custom_meals nullable | set when logged via custom meal |
+
+### `custom_meals`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK → users | |
+| `name` | text | |
+| `total_calories` | numeric | |
+| `total_protein_g` | numeric | |
+| `total_carbs_g` | numeric | |
+| `total_fat_g` | numeric | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+### `custom_meal_ingredients`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `meal_id` | uuid FK → custom_meals | |
+| `food_name` | text | |
+| `quantity` | numeric | |
+| `unit` | text | g / ml / piece / slice / cup / tbsp / tsp / oz / scoop / serving |
+| `calories` | numeric | |
+| `protein_g` | numeric | |
+| `carbs_g` | numeric | |
+| `fat_g` | numeric | |
+| `sort_order` | int | |
+
+### `user_streaks`
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK FK → users | |
+| `display_name` | text | shown on leaderboard (default: 'Anonymous') |
+| `current_streak` | int | active session streak |
+| `longest_streak` | int | all-time best |
+| `updated_at` | timestamptz | |
+
+RLS: public read (leaderboard visibility), user insert/update own row only. Updated client-side by `useStreak` (fire-and-forget).
+
+### `initial_strength`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK → users (unique) | one row per user |
+| `push_exercise` | text | e.g. "Bench Press" |
+| `push_weight_kg` | numeric | |
+| `push_reps` | int | |
+| `pull_exercise` | text | e.g. "Lat Pulldown" |
+| `pull_weight_kg` | numeric | |
+| `pull_reps` | int | |
+| `legs_exercise` | text | e.g. "Leg Press" |
+| `legs_weight_kg` | numeric | |
+| `legs_reps` | int | |
+| `recorded_at` | timestamptz | |
+
+Captured in onboarding strength-test screen. Seeds `muscle_stats` on first score calculation.
 
 ### `sleep_logs`
 | Column | Type | Notes |
@@ -760,8 +935,43 @@ Freestyle flow is identical except no `routineId`.
 3. Sign up creates `auth.users` entry; Supabase trigger creates `users` row
 4. `onboardingComplete` is `false` → redirect to `/onboarding/basic-info`
 5. Each onboarding screen updates `users` table, navigates to next
-6. `character-reveal` → calls `authStore.setOnboardingComplete()` → updates `users.onboarding_complete = true`
-7. Root layout sees `onboardingComplete = true` → redirects to `/(tabs)/home`
+6. `strength-test` → inserts to `initial_strength` table
+7. `character-reveal` → calls `authStore.setOnboardingComplete()` → updates `users.onboarding_complete = true`
+8. Root layout sees `onboardingComplete = true` → redirects to `/(tabs)/home`
+9. On first home load: `CompanionTutorial` shown; `companionTutorialSeen` written to MMKV immediately (before tutorial completes)
+
+### Voice meal logging flow
+
+1. User taps mic button in Diet segment
+2. `voiceLogOpen` state → `VoiceLogSheet` `visible` prop becomes `true`
+3. `VoiceLogSheet` lazy-loads `VoiceLogBody` (React.lazy) — isolates `expo-audio` from OTA-safe binary
+4. User selects meal type, taps mic → `expo-audio` starts recording at HIGH_QUALITY
+5. User taps stop → audio saved to temp file
+6. `geminiSpeech.ts` base64-encodes audio → sends to Gemini 2.5 Flash with extraction prompt → returns `ExtractedFood[]`
+7. `nutrition.ts` looks up each food on FatSecret → scales to stated quantity/unit → builds `ReviewItem[]`
+8. Review screen shown: user can edit quantities (macros auto-recalculate), remove items, add missing items
+9. "Save" → `saveDietLog()` called per item → inserted to `diet_logs` → `useDietLogs` refreshed
+
+### Custom meals flow
+
+1. In Diet segment, user taps "My Meals" tab in AddFoodSheet
+2. Recent meals shown first (queried via `diet_logs.custom_meal_id`), then all meals
+3. "Log" button → calls `saveDietLog` with `customMealId` set, linking the log entry to the template
+4. "+" button → opens CustomMealBuilderSheet
+5. Builder: name input + ingredient list; each ingredient added via FatSecret search or manual entry
+6. "Save Meal" → `useCustomMeals.createMeal()` → inserts to `custom_meals` + `custom_meal_ingredients`
+7. Totals are pre-computed from ingredient sum; `useCustomMeals` returns `recentMeals` computed from `diet_logs` join
+
+### Streak & leaderboard flow
+
+1. `useStreak` fetches last 180 days of workout dates on mount
+2. Computes 90th-percentile rest-day gap → infers allowed gap (clamped 2–4 days)
+3. Walks dates, breaking streak on gap exceeding allowed window
+4. Checks if user is still within rest window from last workout
+5. Upserts result to `user_streaks` (fire-and-forget, does not block UI)
+6. `useLeaderboard(50)` fetches top 50 from `user_streaks` ordered by `current_streak` DESC
+7. Subscribes to Supabase real-time channel on `user_streaks` table for live rank updates
+8. Trophy button on Home → leaderboard sheet opens showing ranked list
 
 ---
 
@@ -774,6 +984,16 @@ Keys used:
 |---|---|---|
 | `daily_score_cache` | JSON stringified `DailyScore` | Today only (checked by date) |
 | `exercise_cache_v1` | JSON `{ items: Exercise[], lastFetched: number }` | 7 days |
+| `companion_tutorial_seen` | boolean | Persistent |
+| `companion_enabled` | boolean | Persistent |
+| `companion_personality` | `'friendly' \| 'motivational' \| 'strict' \| 'playful'` | Persistent |
+| `notifications_granted` | boolean | Persistent |
+| `notif_workout` | boolean | Persistent (per-category notification toggle) |
+| `notif_diet` | boolean | Persistent |
+| `notif_sleep` | boolean | Persistent |
+| `notif_streak` | boolean | Persistent |
+
+`lib/storage.ts` uses a lazy proxy pattern — MMKV initialises on first access. Falls back to in-memory `MemoryStorage` if the native module fails (e.g., older OTA binaries). Provides `getJSON<T>()` and `setJSON()` helpers for typed access.
 
 Cache cleared on `authStore.signOut()`.
 
@@ -788,9 +1008,10 @@ EXPO_PUBLIC_SUPABASE_URL=https://expyhcszamtmkxcpfuzt.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<jwt>
 FATSECRET_CLIENT_ID=<id>
 FATSECRET_CLIENT_SECRET=<secret>
+EXPO_PUBLIC_GEMINI_API_KEY=<key>
 ```
 
-`EXPO_PUBLIC_` prefix makes variables available client-side via `process.env`. FatSecret keys are server-only (used in `lib/fatsecret/client.ts` with no `EXPO_PUBLIC_` prefix — keep them that way if you move to an Edge Function).
+`EXPO_PUBLIC_` prefix makes variables available client-side via `process.env`. FatSecret keys are server-only (used in `lib/fatsecret/client.ts` with no `EXPO_PUBLIC_` prefix — keep them that way if you move to an Edge Function). The Gemini key is currently client-side (`EXPO_PUBLIC_`) because voice extraction runs on-device.
 
 ---
 
@@ -863,9 +1084,94 @@ The `exercises.primary_muscles` column is `text[]` in Postgres. Always guard:
 const muscles = Array.isArray(raw) ? raw.join(', ') : (raw ?? '');
 ```
 
+### OTA safety for native modules
+
+Features that require a new native module (e.g., `expo-audio`) must be lazy-loaded so the JavaScript bundle can ship via OTA to binaries that don't yet include the native module. Use `React.lazy` + `Suspense`:
+
+```tsx
+// VoiceLogSheet.tsx — safe OTA wrapper
+const VoiceLogBody = React.lazy(() => import('./VoiceLogBody'));
+
+export function VoiceLogSheet({ visible, ...props }) {
+  return (
+    <Sheet visible={visible} ...>
+      <Suspense fallback={<LoadingView />}>
+        {visible && <VoiceLogBody {...props} />}
+      </Suspense>
+    </Sheet>
+  );
+}
+```
+
+The inner component (`VoiceLogBody`) can safely `import` the native module at the top level — it won't be evaluated until Suspense resolves. If the native module is missing (old binary), the Suspense fallback shows rather than crashing the whole screen.
+
+### Streak persistence
+
+`useStreak` writes `companionTutorialSeen` to MMKV **immediately on mount**, not on completion. This ensures the tutorial is not shown again even if the user force-quits mid-tutorial.
+
 ---
 
-## 15. Adding New Features
+## 15. Voice & Diet Utilities
+
+### `lib/voice/geminiSpeech.ts`
+
+Sends base64-encoded audio to Gemini 2.5 Flash and extracts a list of foods with quantities.
+
+```typescript
+export type ExtractedFood = { food: string; quantity: number; unit: string; };
+
+export async function extractFoodsFromAudio(base64Audio: string, mimeType: string): Promise<ExtractedFood[]>
+```
+
+- API: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`
+- Temperature 0.1, maxOutputTokens 1024 (low temp for deterministic extraction)
+- Strips markdown fences from response before JSON parse
+- Returns `[]` on unclear audio; never throws on bad response
+
+**Extraction rules baked into the prompt:**
+- Normalises units: "grams"→"g", "tablespoon"→"tbsp", etc.
+- Special cases: "glass of milk"→240 ml, "an egg"→1 piece
+- Ignores meal type mentions in speech
+
+### `lib/voice/nutrition.ts`
+
+FatSecret nutrition lookup with unit scaling. Takes an `ExtractedFood` and returns a `ReviewItem` with per-unit scalars so quantities can be edited after review.
+
+```typescript
+export async function lookupNutrition(foodName: string, quantity: number, unit: string): Promise<ReviewItem | null>
+export function rescale(item: ReviewItem, newQty: number): ReviewItem
+```
+
+Unit → gram conversions: `g:1, ml:1, oz:28.35, cup:240, tbsp:15, tsp:5`; count units (piece, slice, scoop, serving) scale by quantity directly.
+
+Returns a `placeholderItem()` (zero macros) for foods that cannot be found, so the review list always has an entry to edit.
+
+### `lib/diet/saveDietLog.ts`
+
+Single insert/update function used by all diet logging paths (manual, voice, custom meals).
+
+```typescript
+export interface SaveDietLogParams {
+  userId: string;
+  date: string;
+  mealType: string;
+  description: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  editingId?: string;       // provided → UPDATE existing row
+  customMealId?: string;    // set when logging from a custom meal template
+}
+
+export async function saveDietLog(params: SaveDietLogParams): Promise<void>
+```
+
+Always triggers score recalculation after save.
+
+---
+
+## 16. Adding New Features
 
 ### New screen (tab)
 

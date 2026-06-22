@@ -8,7 +8,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import { Plus, Trash2 } from 'lucide-react-native';
 import { Card } from './Card';
 import { ExerciseThumbnail } from './ExerciseThumbnail';
 import { SetRow } from './SetRow';
@@ -38,6 +38,7 @@ export interface ExerciseCardProps {
   onAddSet: () => void;
   onUpdateSet: (index: number, patch: Partial<SetDraft>) => void;
   onRemoveSet: (index: number) => void;
+  onRemoveExercise?: () => void;
 }
 
 /**
@@ -51,6 +52,7 @@ export function ExerciseCard({
   onAddSet,
   onUpdateSet,
   onRemoveSet,
+  onRemoveExercise,
 }: ExerciseCardProps) {
   return (
     <Card padding="none" style={styles.card}>
@@ -63,6 +65,11 @@ export function ExerciseCard({
             <Text style={styles.rest}>Rest {exercise.restSeconds}s</Text>
           ) : null}
         </View>
+        {onRemoveExercise ? (
+          <Pressable onPress={onRemoveExercise} hitSlop={12} style={styles.removeExerciseBtn}>
+            <Trash2 size={16} color={colors.ink3} strokeWidth={1.75} />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Column headers */}
@@ -130,6 +137,9 @@ const styles = StyleSheet.create({
   } satisfies ViewStyle,
   headerText: {
     flex: 1,
+  } satisfies ViewStyle,
+  removeExerciseBtn: {
+    padding: spacing.xs,
   } satisfies ViewStyle,
   name: {
     ...(typography.subheading as TextStyle),

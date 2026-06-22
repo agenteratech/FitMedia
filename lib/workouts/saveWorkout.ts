@@ -2,6 +2,12 @@ import { supabase } from '../supabase';
 import type { WorkoutExerciseEntry } from '../../stores/workoutStore';
 import { normalizeMuscleList, primaryMuscleLabel } from './muscles';
 
+// Custom exercises have client-generated IDs (not real DB UUIDs). Storing them
+// in the UUID column would cause a Postgres type error, so we pass null instead
+// and rely on exercise_name + exercise_target for identity and muscle mapping.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isRealExerciseId = (id: string) => UUID_RE.test(id);
+
 const classifyHit = (sets: number): 'high' | 'medium' | 'low' => {
   if (sets >= 8) return 'high';
   if (sets >= 4) return 'medium';
@@ -67,12 +73,13 @@ export async function saveWorkout(params: SaveWorkoutParams): Promise<{ error: s
 
     for (const [index, exercise] of exercises.entries()) {
       const primaryTarget = normalizeMuscleList(exercise.primaryMuscle)[0] ?? null;
+      const dbExerciseId = isRealExerciseId(exercise.exerciseId) ? exercise.exerciseId : null;
 
       const { data: workoutExercise, error: exerciseError } = await supabase
         .from('workout_exercises')
         .insert({
           workout_id: workout.id,
-          exercise_id: exercise.exerciseId,
+          exercise_id: dbExerciseId,
           exercise_name: exercise.name,
           exercise_target: primaryTarget ?? undefined,
           order_index: index,
@@ -115,7 +122,8 @@ async function saveWorkoutSetsAndPrs(
     if (setError) throw new Error(setError.message);
 
     // PR inserts are best-effort: a missed record isn't worth losing the workout.
-    if (set.isPR) {
+    // Skip for custom exercises — they have no real exercise_id to reference.
+    if (set.isPR && isRealExerciseId(exercise.exerciseId)) {
       await supabase.from('personal_records').insert({
         user_id: userId,
         exercise_id: exercise.exerciseId,

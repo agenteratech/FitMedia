@@ -5,6 +5,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -177,6 +178,21 @@ function ActiveExerciseCard({
     [syncToStore]
   );
 
+  const handleRemoveExercise = useCallback(() => {
+    Alert.alert(
+      'Remove Exercise',
+      `Remove "${entry.name}" and all its sets?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => useWorkoutStore.getState().removeExercise(entry.exerciseId),
+        },
+      ],
+    );
+  }, [entry.name, entry.exerciseId]);
+
   const exerciseDraft: ExerciseDraft = { id: entry.exerciseId, name: entry.name };
 
   return (
@@ -187,6 +203,7 @@ function ActiveExerciseCard({
       onAddSet={handleAddSet}
       onUpdateSet={handleUpdateSet}
       onRemoveSet={handleRemoveSet}
+      onRemoveExercise={handleRemoveExercise}
     />
   );
 }

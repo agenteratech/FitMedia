@@ -69,7 +69,7 @@ const MUSCLE_TO_GROUP: Record<string, string> = {
   'transverse abdominis': 'core', 'rectus abdominis': 'core',
   'external oblique': 'core', 'internal oblique': 'core',
   'transversus abdominis': 'core', 'lower abs': 'core', 'upper abs': 'core',
-  'hip abductors': 'core', plank: 'core',
+  'hip abductors': 'legs', plank: 'core',
 };
 
 const ALL_GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core'];
@@ -246,21 +246,32 @@ Deno.serve(async (req) => {
     )];
 
     const { data: exercises } = exerciseIds.length > 0
-      ? await admin.from('exercises').select('id, primary_muscles').in('id', exerciseIds)
+      ? await admin.from('exercises').select('id, primary_muscles, secondary_muscles').in('id', exerciseIds)
       : { data: [] };
 
-    const exMuscleMap: Record<string, string[]> = {};
+    const exMuscleMap: Record<string, { primary: string[]; secondary: string[] }> = {};
     for (const ex of exercises ?? []) {
-      exMuscleMap[ex.id] = Array.isArray(ex.primary_muscles) ? ex.primary_muscles : [];
+      exMuscleMap[ex.id] = {
+        primary:   Array.isArray(ex.primary_muscles)   ? ex.primary_muscles   : [],
+        secondary: Array.isArray(ex.secondary_muscles) ? ex.secondary_muscles : [],
+      };
     }
 
-    function getMuscleGroups(exId: string, exerciseTarget: any): string[] {
-      const rawMuscles = [...(exMuscleMap[exId] ?? [])];
-      if (rawMuscles.length === 0 && exerciseTarget) {
+    // Returns primary and secondary muscle groups separately so each call site
+    // can weight them appropriately (primary = full stimulus, secondary = 0.4×).
+    function getMuscleGroups(exId: string, exerciseTarget: any): { primary: string[]; secondary: string[] } {
+      const ex = exMuscleMap[exId];
+      const rawPrimary   = [...(ex?.primary   ?? [])];
+      const rawSecondary = [...(ex?.secondary ?? [])];
+      if (rawPrimary.length === 0 && exerciseTarget) {
         const targets = Array.isArray(exerciseTarget) ? exerciseTarget : [exerciseTarget];
-        rawMuscles.push(...targets);
+        rawPrimary.push(...targets);
       }
-      return [...new Set(rawMuscles.map(mapMuscle).filter((g): g is string => g !== null))];
+      const primary = [...new Set(rawPrimary.map(mapMuscle).filter((g): g is string => g !== null))];
+      const secondary = [...new Set(
+        rawSecondary.map(mapMuscle).filter((g): g is string => g !== null && !primary.includes(g))
+      )];
+      return { primary, secondary };
     }
 
     // ── 6. Sleep (most recent within 2 days) ──────────────────────────────────
@@ -308,10 +319,10 @@ Deno.serve(async (req) => {
     const weeklySetsByGroup: Record<string, number> = {};
     for (const workout of weekWorkouts ?? []) {
       for (const we of workout.workout_exercises) {
-        const groups = getMuscleGroups(we.exercise_id, we.exercise_target);
+        const { primary: primaryGroups } = getMuscleGroups(we.exercise_id, we.exercise_target);
         for (const set of we.workout_sets) {
           if (!set.is_completed || set.set_type === 'warmup') continue;
-          for (const group of groups) {
+          for (const group of primaryGroups) {
             weeklySetsByGroup[group] = (weeklySetsByGroup[group] ?? 0) + 1;
           }
         }
@@ -360,9 +371,12 @@ Deno.serve(async (req) => {
         const sStartLegs = calcSstart(initStr.legs_weight_kg, initStr.legs_reps);
 
         const SCALE = 10;
+        // Shoulders: 85% of push score (anterior delts heavily recruited in press)
+        // + 15% of pull score (rear delts recruited in lat pulldown / pull-ups).
+        const sStartShoulders = sStartPush * 0.85 + sStartPull * 0.15;
         statMap['chest']     = { current: sStartPush * SCALE,                          max: sStartPush * SCALE,                          lastTrained: null };
         statMap['back']      = { current: sStartPull * SCALE,                          max: sStartPull * SCALE,                          lastTrained: null };
-        statMap['shoulders'] = { current: sStartPush * SCALE * 0.7,                    max: sStartPush * SCALE * 0.7,                    lastTrained: null };
+        statMap['shoulders'] = { current: sStartShoulders * SCALE,                     max: sStartShoulders * SCALE,                     lastTrained: null };
         statMap['arms']      = { current: (sStartPush + sStartPull) / 2 * SCALE * 0.7, max: (sStartPush + sStartPull) / 2 * SCALE * 0.7, lastTrained: null };
         statMap['legs']      = { current: sStartLegs * SCALE,                          max: sStartLegs * SCALE,                          lastTrained: null };
         statMap['core']      = { current: sStartPush * SCALE * 0.5,                    max: sStartPush * SCALE * 0.5,                    lastTrained: null };
@@ -376,11 +390,10 @@ Deno.serve(async (req) => {
 
     for (const workout of todayWorkouts) {
       for (const we of workout.workout_exercises) {
-        const exId = we.exercise_id;
-        if (!exId) continue;
+        const exId = we.exercise_id; // null for custom exercises — handled via exercise_target fallback
 
-        const groups      = getMuscleGroups(exId, we.exercise_target);
-        const e1RMActive  = e1RMMap[exId] ?? 50;
+        const { primary: primaryGroups, secondary: secondaryGroups } = getMuscleGroups(exId, we.exercise_target);
+        const e1RMActive  = exId ? (e1RMMap[exId] ?? 50) : 50;
 
         for (const set of we.workout_sets) {
           if (!set.is_completed) continue;
@@ -392,8 +405,14 @@ Deno.serve(async (req) => {
           const stSet     = Math.log(loadRatio * set.reps * eMod + 1);
           totalStimulus  += stSet;
 
-          for (const group of groups) {
+          // Primary muscles receive full stimulus; secondary muscles receive 40%
+          // (they are trained but less directly loaded than the target muscle).
+          for (const group of primaryGroups) {
             stimulusMap[group] = (stimulusMap[group] ?? 0) + stSet;
+            trainedGroups.add(group);
+          }
+          for (const group of secondaryGroups) {
+            stimulusMap[group] = (stimulusMap[group] ?? 0) + stSet * 0.4;
             trainedGroups.add(group);
           }
         }

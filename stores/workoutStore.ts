@@ -24,6 +24,7 @@ export type WorkoutState = {
   setWorkoutType: (type: string) => void;
   setStartedAt: (value: string) => void;
   upsertExercise: (entry: WorkoutExerciseEntry) => void;
+  removeExercise: (exerciseId: string) => void;
   reset: () => void;
 };
 
@@ -47,5 +48,11 @@ export const useWorkoutStore = create<WorkoutState>((set) => ({
 
       return { exercises: [...state.exercises, entry] };
     }),
+  removeExercise: (exerciseId) =>
+    set((state) => ({
+      exercises: state.exercises
+        .filter((e) => e.exerciseId !== exerciseId)
+        .map((e, i) => ({ ...e, orderIndex: i })),
+    })),
   reset: () => set({ workoutType: 'Workout', startedAt: null, exercises: [] }),
 }));

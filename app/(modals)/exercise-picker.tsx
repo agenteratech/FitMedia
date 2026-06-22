@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
+  Alert,
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
@@ -135,17 +136,27 @@ export default function ExercisePickerScreen() {
 
   // Custom exercise — only available in draft (active workout) mode
   const canAddCustom = target === 'draft' && search.trim().length > 0;
+  const customNeedsMuscle = canAddCustom && activeCategory === 'All';
 
   const handleAddCustom = () => {
     const name = search.trim();
     if (!name) return;
+
+    if (activeCategory === 'All') {
+      Alert.alert(
+        'Select a Muscle Group',
+        'Tap a category chip (Chest, Back, Legs…) above before adding your custom exercise so it counts toward your muscle scores and heatmap.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     const customId = `custom_${name.toLowerCase().replace(/\W+/g, '_')}_${Date.now()}`;
     const existingCount = useWorkoutStore.getState().exercises.length;
-    const muscleHint = activeCategory !== 'All' ? activeCategory : null;
     upsertExercise({
       exerciseId: customId,
       name,
-      primaryMuscle: muscleHint,
+      primaryMuscle: activeCategory,
       orderIndex: existingCount,
       sets: [
         { setNumber: 1, weight: 0, reps: 8, isPR: false, completed: false },
@@ -257,7 +268,9 @@ export default function ExercisePickerScreen() {
                   <Text style={styles.customName} numberOfLines={1}>
                     Add "{search.trim()}"
                   </Text>
-                  <Text style={styles.customCaption}>Custom exercise</Text>
+                  <Text style={styles.customCaption}>
+                    {customNeedsMuscle ? 'Select a muscle group above first' : `Custom · ${activeCategory}`}
+                  </Text>
                 </View>
               </Pressable>
             ) : null}
@@ -276,7 +289,9 @@ export default function ExercisePickerScreen() {
                   <Text style={styles.customName} numberOfLines={1}>
                     Add "{search.trim()}"
                   </Text>
-                  <Text style={styles.customCaption}>Custom exercise</Text>
+                  <Text style={styles.customCaption}>
+                    {customNeedsMuscle ? 'Select a muscle group above first' : `Custom · ${activeCategory}`}
+                  </Text>
                 </View>
               </Pressable>
             </>
