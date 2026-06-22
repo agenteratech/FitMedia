@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ChevronDown, Plus, Dumbbell, Sparkles } from 'lucide-react-native';
+import { ChevronDown, Plus, Dumbbell, Sparkles, TrendingUp } from 'lucide-react-native';
 import { useWorkoutStore } from '../../stores/workoutStore';
 import type { WorkoutExerciseEntry } from '../../stores/workoutStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -37,6 +38,28 @@ function applyActiveFlag(arr: SetDraft[]): SetDraft[] {
   return arr.map((s, i) => ({ ...s, isActive: i === firstIncomplete }));
 }
 
+// Custom exercises use synthetic client ids; only real DB UUIDs have history.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type SetAgg = { topWeight: number; topReps: number; volume: number };
+
+function aggregate(sets: { weightKg: number; reps: number }[]): SetAgg | null {
+  let topWeight = 0;
+  let topReps = 0;
+  let volume = 0;
+  let any = false;
+  for (const s of sets) {
+    if (s.weightKg <= 0 || s.reps <= 0) continue;
+    any = true;
+    volume += s.weightKg * s.reps;
+    if (s.weightKg > topWeight || (s.weightKg === topWeight && s.reps > topReps)) {
+      topWeight = s.weightKg;
+      topReps = s.reps;
+    }
+  }
+  return any ? { topWeight, topReps, volume } : null;
+}
+
 // ── ActiveExerciseCard ──────────────────────────────────────────────────────
 // One instance per exercise. Owns per-exercise hooks (useAutoFill,
 // usePRDetection). Does NOT subscribe to useWorkoutStore — it reads/writes the
@@ -46,10 +69,12 @@ function ActiveExerciseCard({
   entry,
   userId,
   onSetCompleted,
+  onOpenHistory,
 }: {
   entry: WorkoutExerciseEntry;
   userId: string;
   onSetCompleted: (exerciseName: string, setLabel: string) => void;
+  onOpenHistory: (exerciseId: string, name: string) => void;
 }) {
   const { sets: fillSets } = useAutoFill(entry.exerciseId, userId);
   const { checkPR } = usePRDetection(entry.exerciseId, userId);
@@ -195,11 +220,58 @@ function ActiveExerciseCard({
 
   const exerciseDraft: ExerciseDraft = { id: entry.exerciseId, name: entry.name };
 
+  // Previous session's performance (from autofill) vs this session's completed sets.
+  const lastAgg = useMemo(
+    () => aggregate(fillSets.map((s) => ({ weightKg: s.weightKg, reps: s.reps }))),
+    [fillSets]
+  );
+  const currentAgg = useMemo(
+    () =>
+      aggregate(
+        drafts
+          .filter((d) => d.isDone)
+          .map((d) => ({ weightKg: parseFloat(d.kg) || 0, reps: parseInt(d.reps, 10) || 0 }))
+      ),
+    [drafts]
+  );
+
+  const hasHistory = UUID_RE.test(entry.exerciseId);
+
+  const subtitle = useMemo(() => {
+    if (!lastAgg) return null;
+
+    const chips: { key: string; text: string }[] = [];
+    if (currentAgg) {
+      const weightDelta = currentAgg.topWeight - lastAgg.topWeight;
+      const repsDelta = currentAgg.topReps - lastAgg.topReps;
+      const volumeDelta = currentAgg.volume - lastAgg.volume;
+      if (weightDelta > 0) chips.push({ key: 'w', text: `+${+weightDelta.toFixed(1)} kg` });
+      else if (weightDelta === 0 && repsDelta > 0) chips.push({ key: 'r', text: `+${repsDelta} reps` });
+      if (volumeDelta > 0) chips.push({ key: 'v', text: `+${Math.round(volumeDelta)} kg vol` });
+    }
+
+    return (
+      <View style={styles.overloadRow}>
+        <Text style={styles.lastTimeText} numberOfLines={1}>
+          Last: {lastAgg.topWeight > 0 ? `${lastAgg.topWeight} kg × ${lastAgg.topReps}` : `${lastAgg.topReps} reps`}
+        </Text>
+        {chips.map((c) => (
+          <View key={c.key} style={styles.overloadChip}>
+            <TrendingUp size={11} color={colors.success} strokeWidth={2.25} />
+            <Text style={styles.overloadChipText}>{c.text}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  }, [lastAgg, currentAgg]);
+
   return (
     <ExerciseCard
       exercise={exerciseDraft}
       sets={drafts}
       showPrevious
+      subtitle={subtitle}
+      onPressTitle={hasHistory ? () => onOpenHistory(entry.exerciseId, entry.name) : undefined}
       onAddSet={handleAddSet}
       onUpdateSet={handleUpdateSet}
       onRemoveSet={handleRemoveSet}
@@ -335,6 +407,12 @@ export default function ActiveWorkoutScreen() {
                   entry={entry}
                   userId={user?.id ?? ''}
                   onSetCompleted={handleSetCompleted}
+                  onOpenHistory={(exerciseId, name) =>
+                    router.push({
+                      pathname: '/(modals)/exercise-history',
+                      params: { exerciseId, name },
+                    })
+                  }
                 />
               ))}
               <Button
@@ -418,5 +496,30 @@ const styles = StyleSheet.create({
     ...(typography.caption as TextStyle),
     color: colors.ink3,
     textAlign: 'center',
+  } satisfies TextStyle,
+  overloadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: 2,
+  } satisfies ViewStyle,
+  lastTimeText: {
+    ...(typography.caption as TextStyle),
+    color: colors.ink3,
+  } satisfies TextStyle,
+  overloadChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.successSoft,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+  } satisfies ViewStyle,
+  overloadChipText: {
+    ...(typography.label as TextStyle),
+    fontSize: 10,
+    color: colors.success,
   } satisfies TextStyle,
 });

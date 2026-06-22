@@ -205,7 +205,6 @@ export default function LogsScreen() {
   const [voiceLogOpen, setVoiceLogOpen] = useState(false);
   const [optionsEntry, setOptionsEntry] = useState<DietLog | null>(null);
   const [editingEntry, setEditingEntry] = useState<DietLog | null>(null);
-  const [selectedWorkout, setSelectedWorkout] = useState<WorkoutItem | null>(null);
 
   // ── Workout data ──────────────────────────────────────────────────────
   const todayWorkouts = useMemo(
@@ -290,7 +289,6 @@ export default function LogsScreen() {
             weekSummary={weeklySummary}
             selectedYMD={selectedYMD}
             todayYMD={todayYMD}
-            onSelectWorkout={setSelectedWorkout}
           />
         )}
         {segment === 'diet' && (
@@ -421,13 +419,6 @@ export default function LogsScreen() {
         onSaved={() => { setVoiceLogOpen(false); refetchDiet(); }}
       />
 
-      {/* Workout detail sheet — always mounted, shown when a session card is tapped */}
-      <WorkoutDetailSheet
-        visible={selectedWorkout !== null}
-        workout={selectedWorkout}
-        onClose={() => setSelectedWorkout(null)}
-      />
-
       {/* Calendar picker */}
       <CalendarModal
         visible={calendarOpen}
@@ -444,129 +435,18 @@ export default function LogsScreen() {
 // ── WorkoutSegment ─────────────────────────────────────────────────────────
 type WorkoutItem = ReturnType<typeof useWorkoutHistory>['items'][number];
 
-const ds = StyleSheet.create({
-  body: { paddingBottom: spacing['4xl'] } satisfies ViewStyle,
-  header: {
-    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
-    paddingHorizontal: spacing['2xl'], paddingVertical: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
-  } satisfies ViewStyle,
-  headerMeta: { flex: 1 } satisfies ViewStyle,
-  title: { ...(typography.subheading as TextStyle) } satisfies TextStyle,
-  meta: { ...(typography.caption as TextStyle), color: colors.ink3, marginTop: 2 } satisfies TextStyle,
-  closeBtn: { padding: spacing.xs, marginLeft: spacing.sm } satisfies ViewStyle,
-  exBlock: {
-    paddingHorizontal: spacing['2xl'],
-    paddingTop: spacing.lg, paddingBottom: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
-  } satisfies ViewStyle,
-  exName: { ...(typography.bodyMedium as TextStyle), marginBottom: spacing.sm } satisfies TextStyle,
-  setHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs } satisfies ViewStyle,
-  setRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs } satisfies ViewStyle,
-  setHeaderCell: { ...(typography.label as TextStyle), fontSize: 10, color: colors.ink3 } satisfies TextStyle,
-  setCell: { ...(typography.body as TextStyle), fontSize: 14 } satisfies TextStyle,
-  setNumCol: { width: 36 } satisfies ViewStyle,
-  setKgCol: { flex: 1 } satisfies ViewStyle,
-  setRepsCol: { flex: 1 } satisfies ViewStyle,
-  setPrCol: { width: 36, alignItems: 'flex-end' } satisfies ViewStyle,
-  prBadge: {
-    ...(typography.label as TextStyle), fontSize: 10,
-    color: colors.accent, backgroundColor: colors.accent + '18',
-    paddingHorizontal: spacing.xs, paddingVertical: 2,
-    borderRadius: radius.pill, overflow: 'hidden',
-  } satisfies TextStyle,
-  emptyText: {
-    ...(typography.caption as TextStyle), color: colors.ink3,
-    textAlign: 'center', paddingHorizontal: spacing['2xl'], paddingVertical: spacing['2xl'],
-  } satisfies TextStyle,
-});
-
-function WorkoutDetailSheet({
-  visible,
-  workout,
-  onClose,
-}: {
-  visible: boolean;
-  workout: WorkoutItem | null;
-  onClose: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  // Keep a stable reference during dismiss animation so content doesn't flash away
-  const lastRef = useRef<WorkoutItem | null>(null);
-  if (workout) lastRef.current = workout;
-  const w = workout ?? lastRef.current;
-
-  return (
-    <Sheet
-      visible={visible}
-      onClose={onClose}
-      snapPoints={['85%']}
-      scrollable
-      scrollContentStyle={[ds.body, { paddingBottom: insets.bottom + spacing['3xl'] }]}
-    >
-      <View style={ds.header}>
-        <View style={ds.headerMeta}>
-          <Text style={ds.title}>{w?.workout_type ?? ''}</Text>
-          <Text style={[ds.meta, numericStyle]}>
-            {w?.duration_minutes ? `${w.duration_minutes} min  ·  ` : ''}
-            {w?.total_exercises ?? 0} exercise{(w?.total_exercises ?? 0) !== 1 ? 's' : ''}
-            {'  ·  '}{(w?.total_volume_kg ?? 0).toFixed(0)} kg
-          </Text>
-        </View>
-        <Pressable onPress={onClose} hitSlop={8} style={ds.closeBtn}>
-          <X size={20} color={colors.ink2} strokeWidth={1.75} />
-        </Pressable>
-      </View>
-
-      {w?.workout_exercises.map((ex) => (
-        <View key={ex.id} style={ds.exBlock}>
-          <Text style={ds.exName}>{ex.exercise_name}</Text>
-          <View style={ds.setHeaderRow}>
-            <Text style={[ds.setHeaderCell, ds.setNumCol]}>SET</Text>
-            <Text style={[ds.setHeaderCell, ds.setKgCol]}>KG</Text>
-            <Text style={[ds.setHeaderCell, ds.setRepsCol]}>REPS</Text>
-            <View style={ds.setPrCol} />
-          </View>
-          {[...ex.workout_sets]
-            .sort((a, b) => a.set_number - b.set_number)
-            .map((s) => (
-              <View key={s.id} style={ds.setRow}>
-                <Text style={[ds.setCell, ds.setNumCol, numericStyle]}>{s.set_number}</Text>
-                <Text style={[ds.setCell, ds.setKgCol, numericStyle]}>
-                  {s.weight_kg > 0 ? s.weight_kg : '—'}
-                </Text>
-                <Text style={[ds.setCell, ds.setRepsCol, numericStyle]}>
-                  {s.reps > 0 ? s.reps : '—'}
-                </Text>
-                <View style={ds.setPrCol}>
-                  {s.is_pr ? <Text style={ds.prBadge}>PR</Text> : null}
-                </View>
-              </View>
-            ))}
-        </View>
-      ))}
-
-      {(w?.workout_exercises.length ?? 0) === 0 ? (
-        <Text style={ds.emptyText}>No exercise detail recorded for this session.</Text>
-      ) : null}
-    </Sheet>
-  );
-}
-
 function WorkoutSegment({
   workouts,
   loading,
   weekSummary,
   selectedYMD,
   todayYMD,
-  onSelectWorkout,
 }: {
   workouts: WorkoutItem[];
   loading: boolean;
   weekSummary: { count: number; streak: number };
   selectedYMD: string;
   todayYMD: string;
-  onSelectWorkout: (w: WorkoutItem) => void;
 }) {
   const router = useRouter();
   const isEmpty = !loading && workouts.length === 0;
@@ -612,7 +492,9 @@ function WorkoutSegment({
           {workouts.map((w) => (
             <Pressable
               key={w.id}
-              onPress={() => onSelectWorkout(w)}
+              onPress={() =>
+                router.push({ pathname: '/(modals)/workout-detail', params: { workoutId: w.id } })
+              }
               style={({ pressed }) => (pressed ? styles.sessionPressed : undefined)}
             >
               <Card padding="default" style={styles.sessionCard}>

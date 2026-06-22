@@ -24,6 +24,7 @@ import { useDailyScore } from '../../hooks/useDailyScore';
 import { useBodyPartScores } from '../../hooks/useBodyPartScores';
 import { useScoreHistory, sinceForRange, type ScorePoint, type ScoreRange } from '../../hooks/useScoreHistory';
 import { useProgressStats } from '../../hooks/useProgressStats';
+import { useTrainingInsights } from '../../hooks/useTrainingInsights';
 import { Card, Chip } from '../../src/components/primitives';
 import { colors, spacing, typography, numericStyle, radius } from '../../src/theme';
 
@@ -82,6 +83,11 @@ export default function ProgressScreen() {
   const { points, trend, loading: histLoading } = useScoreHistory(range);
   const since = useMemo(() => sinceForRange(range), [range]);
   const { stats, loading: statsLoading } = useProgressStats(since);
+  const periodNoun = useMemo(
+    () => (range === 'Week' ? 'week' : range === 'Month' ? 'month' : range === '3 Months' ? '3 months' : 'year'),
+    [range],
+  );
+  const { insights: trainingInsights } = useTrainingInsights(since, periodNoun);
 const chartWidth = screenW - CHART_H_OFFSET;
   const totalScore = score?.total_score ?? null;
   const periodLabel = rangePeriodLabel(range);
@@ -164,6 +170,32 @@ const chartWidth = screenW - CHART_H_OFFSET;
             label="PRs Set"
           />
         </View>
+
+        {/* ── Training insights (progressive overload) ── */}
+        {trainingInsights.length > 0 && (
+          <>
+            <SectionHeader label="Training Insights" />
+            <Card padding="default">
+              {trainingInsights.map((insight, i) => (
+                <View key={insight.id} style={[styles.trainingInsightRow, i > 0 && styles.insightBorder]}>
+                  <View
+                    style={[
+                      styles.trainingInsightIcon,
+                      { backgroundColor: insight.direction === 'up' ? colors.successSoft : '#F6DDD9' },
+                    ]}
+                  >
+                    {insight.direction === 'up' ? (
+                      <TrendingUp size={14} color={colors.success} strokeWidth={2} />
+                    ) : (
+                      <TrendingDown size={14} color={colors.alert} strokeWidth={2} />
+                    )}
+                  </View>
+                  <Text style={styles.trainingInsightMsg}>{insight.message}</Text>
+                </View>
+              ))}
+            </Card>
+          </>
+        )}
 
         {/* ── Today's score breakdown ── */}
         {score && (
@@ -533,6 +565,26 @@ const styles = StyleSheet.create({
   insightMsg: {
     ...(typography.body as TextStyle),
     color: colors.ink1,
+  } satisfies TextStyle,
+
+  // Training insights (progressive overload)
+  trainingInsightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  } satisfies ViewStyle,
+  trainingInsightIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } satisfies ViewStyle,
+  trainingInsightMsg: {
+    ...(typography.body as TextStyle),
+    color: colors.ink1,
+    flex: 1,
   } satisfies TextStyle,
 
 });

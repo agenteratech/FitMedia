@@ -8,7 +8,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
-import { Plus, Trash2 } from 'lucide-react-native';
+import { Plus, Trash2, ChevronRight } from 'lucide-react-native';
 import { Card } from './Card';
 import { ExerciseThumbnail } from './ExerciseThumbnail';
 import { SetRow } from './SetRow';
@@ -35,6 +35,10 @@ export interface ExerciseCardProps {
   exercise: ExerciseDraft;
   sets: SetDraft[];
   showPrevious?: boolean;
+  /** Optional node rendered under the exercise name (e.g. progressive-overload summary). */
+  subtitle?: React.ReactNode;
+  /** When provided, the name becomes tappable (e.g. to open exercise history). */
+  onPressTitle?: () => void;
   onAddSet: () => void;
   onUpdateSet: (index: number, patch: Partial<SetDraft>) => void;
   onRemoveSet: (index: number) => void;
@@ -49,22 +53,36 @@ export function ExerciseCard({
   exercise,
   sets,
   showPrevious = false,
+  subtitle,
+  onPressTitle,
   onAddSet,
   onUpdateSet,
   onRemoveSet,
   onRemoveExercise,
 }: ExerciseCardProps) {
+  const subtitleNode =
+    subtitle ??
+    (exercise.restSeconds ? <Text style={styles.rest}>Rest {exercise.restSeconds}s</Text> : null);
+
   return (
     <Card padding="none" style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
         <ExerciseThumbnail variant="small" />
-        <View style={styles.headerText}>
-          <Text style={styles.name} numberOfLines={1}>{exercise.name}</Text>
-          {exercise.restSeconds ? (
-            <Text style={styles.rest}>Rest {exercise.restSeconds}s</Text>
-          ) : null}
-        </View>
+        {onPressTitle ? (
+          <Pressable style={styles.headerText} onPress={onPressTitle} hitSlop={6}>
+            <View style={styles.nameRow}>
+              <Text style={[styles.name, styles.nameFlex]} numberOfLines={1}>{exercise.name}</Text>
+              <ChevronRight size={15} color={colors.ink4} strokeWidth={1.75} />
+            </View>
+            {subtitleNode}
+          </Pressable>
+        ) : (
+          <View style={styles.headerText}>
+            <Text style={styles.name} numberOfLines={1}>{exercise.name}</Text>
+            {subtitleNode}
+          </View>
+        )}
         {onRemoveExercise ? (
           <Pressable onPress={onRemoveExercise} hitSlop={12} style={styles.removeExerciseBtn}>
             <Trash2 size={16} color={colors.ink3} strokeWidth={1.75} />
@@ -138,6 +156,14 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
   } satisfies ViewStyle,
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  } satisfies ViewStyle,
+  nameFlex: {
+    flexShrink: 1,
+  } satisfies TextStyle,
   removeExerciseBtn: {
     padding: spacing.xs,
   } satisfies ViewStyle,
