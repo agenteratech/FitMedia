@@ -615,6 +615,108 @@ export type Database = {
         };
         Relationships: [];
       };
+      profiles: {
+        Row: {
+          user_id: string;
+          username: string | null;
+          display_name: string;
+          avatar_url: string | null;
+          bio: string | null;
+          post_count: number;
+          follower_count: number;
+          following_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          username?: string | null;
+          display_name?: string;
+          avatar_url?: string | null;
+          bio?: string | null;
+          post_count?: number;
+          follower_count?: number;
+          following_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          username?: string | null;
+          display_name?: string;
+          avatar_url?: string | null;
+          bio?: string | null;
+          post_count?: number;
+          follower_count?: number;
+          following_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      posts: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: 'text' | 'workout' | 'pr' | 'achievement' | 'photo';
+          caption: string | null;
+          image_url: string | null;
+          workout_id: string | null;
+          meta: Json;
+          like_count: number;
+          comment_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type?: 'text' | 'workout' | 'pr' | 'achievement' | 'photo';
+          caption?: string | null;
+          image_url?: string | null;
+          workout_id?: string | null;
+          meta?: Json;
+          like_count?: number;
+          comment_count?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          type?: 'text' | 'workout' | 'pr' | 'achievement' | 'photo';
+          caption?: string | null;
+          image_url?: string | null;
+          workout_id?: string | null;
+          meta?: Json;
+          like_count?: number;
+          comment_count?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      post_likes: {
+        Row: { post_id: string; user_id: string; created_at: string };
+        Insert: { post_id: string; user_id: string; created_at?: string };
+        Update: { post_id?: string; user_id?: string; created_at?: string };
+        Relationships: [];
+      };
+      post_comments: {
+        Row: { id: string; post_id: string; user_id: string; body: string; created_at: string };
+        Insert: { id?: string; post_id: string; user_id: string; body: string; created_at?: string };
+        Update: { id?: string; post_id?: string; user_id?: string; body?: string; created_at?: string };
+        Relationships: [];
+      };
+      post_saves: {
+        Row: { post_id: string; user_id: string; created_at: string };
+        Insert: { post_id: string; user_id: string; created_at?: string };
+        Update: { post_id?: string; user_id?: string; created_at?: string };
+        Relationships: [];
+      };
+      follows: {
+        Row: { follower_id: string; following_id: string; created_at: string };
+        Insert: { follower_id: string; following_id: string; created_at?: string };
+        Update: { follower_id?: string; following_id?: string; created_at?: string };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};

@@ -31,6 +31,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
       <View style={[styles.bar, shadows.tabBar]}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
+          // Routes hidden via `href: null` get tabBarItemStyle.display === 'none'
+          // from expo-router but remain in state.routes — skip them in this
+          // custom bar so they don't render a button.
+          if ((options.tabBarItemStyle as { display?: string } | undefined)?.display === 'none') {
+            return null;
+          }
           const isFocused = state.index === index;
 
           const IconComponent = options.tabBarIcon as unknown as React.ComponentType<{
